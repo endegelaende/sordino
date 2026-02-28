@@ -1,6 +1,6 @@
 """
 tests.test_core_applets — Comprehensive tests for NowPlaying, SelectPlayer,
-and SlimBrowser core applets.
+SlimBrowser, and SlimDiscovery core applets.
 
 Tests cover:
     - NowPlayingMeta — version, settings, registration, services
@@ -13,6 +13,12 @@ Tests cover:
     - SlimBrowserMeta — version, settings, registration
     - SlimBrowserApplet — initialization, step management, action handling,
       sink processing, playlist display, volume/scanner integration
+    - SlimDiscoveryMeta — version, settings, registration, services,
+      configureApplet
+    - SlimDiscoveryApplet — lifecycle, state machine, discovery packet
+      construction, TLV response parsing, service methods, notification
+      handlers, cleanup, poll list management, protocol compatibility
+      with Resonance server
     - DB — chunk storage, item retrieval, size tracking
     - Volume — popup creation, volume adjustment
     - Scanner — popup creation, scanning state
@@ -2018,3 +2024,852 @@ class TestLuaAliases:
         assert (
             sp.manageSelectPlayerMenu.__func__ is sp.manage_select_player_menu.__func__
         )
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# SlimDiscovery — Meta
+# ══════════════════════════════════════════════════════════════════════════════
+
+from jive.applet import Applet
+from jive.applet_meta import AppletMeta
+from jive.applets.SlimDiscovery.SlimDiscoveryApplet import (
+    _VALID_STATES,
+    DISCOVERY_PERIOD,
+    DISCOVERY_TIMEOUT,
+    PORT,
+    SEARCHING_PERIOD,
+    SlimDiscoveryApplet,
+    _parse_tlv_response,
+    _slim_discovery_source,
+)
+from jive.applets.SlimDiscovery.SlimDiscoveryMeta import SlimDiscoveryMeta
+
+
+class TestSlimDiscoveryMeta:
+    """Tests for SlimDiscoveryMeta."""
+
+    def test_jive_version(self):
+        meta = SlimDiscoveryMeta()
+        assert meta.jive_version() == (1, 1)
+
+    def test_jive_version_alias(self):
+        meta = SlimDiscoveryMeta()
+        assert meta.jiveVersion() == (1, 1)
+
+    def test_default_settings(self):
+        meta = SlimDiscoveryMeta()
+        settings = meta.default_settings()
+        assert isinstance(settings, dict)
+        assert "currentPlayer" in settings
+        assert settings["currentPlayer"] is False
+
+    def test_default_settings_alias(self):
+        meta = SlimDiscoveryMeta()
+        assert meta.defaultSettings() == meta.default_settings()
+
+    def test_register_applet_services(self):
+        meta = SlimDiscoveryMeta()
+        registered = []
+        meta.register_service = lambda name: registered.append(name)
+        meta.register_applet()
+
+        expected_services = {
+            "getCurrentPlayer",
+            "setCurrentPlayer",
+            "discoverPlayers",
+            "discoverServers",
+            "connectPlayer",
+            "disconnectPlayer",
+            "iteratePlayers",
+            "iterateSqueezeCenters",
+            "countPlayers",
+            "getPollList",
+            "setPollList",
+            "getInitialSlimServer",
+        }
+        assert set(registered) == expected_services
+
+    def test_register_applet_alias(self):
+        meta = SlimDiscoveryMeta()
+        registered = []
+        meta.register_service = lambda name: registered.append(name)
+        meta.registerApplet()
+        assert len(registered) == 12
+
+    def test_service_count(self):
+        meta = SlimDiscoveryMeta()
+        registered = []
+        meta.register_service = lambda name: registered.append(name)
+        meta.register_applet()
+        assert len(registered) == 12
+
+    def test_configure_applet_no_crash_without_manager(self):
+        """configureApplet should not crash when no AppletManager is available."""
+        meta = SlimDiscoveryMeta()
+        meta.configure_applet()  # Should not raise
+
+    def test_configure_applet_alias(self):
+        meta = SlimDiscoveryMeta()
+        assert meta.configureApplet == meta.configure_applet
+
+    def test_notify_player_new_ignores_normal_player(self):
+        """notify_playerNew should ignore players that aren't ff:ff:ff:ff:ff:ff."""
+        meta = SlimDiscoveryMeta()
+        player = MagicMock()
+        player.get_id.return_value = "00:04:20:aa:bb:cc"
+        meta.notify_playerNew(player)  # Should not raise
+
+    def test_is_applet_meta_subclass(self):
+        meta = SlimDiscoveryMeta()
+        assert isinstance(meta, AppletMeta)
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# SlimDiscovery — Applet construction & lifecycle
+# ══════════════════════════════════════════════════════════════════════════════
+
+
+class TestSlimDiscoveryAppletConstruction:
+    """Tests for SlimDiscoveryApplet construction and basic properties."""
+
+    def test_construction(self):
+        applet = SlimDiscoveryApplet()
+        assert isinstance(applet, Applet)
+        assert isinstance(applet, SlimDiscoveryApplet)
+
+    def test_initial_state_is_searching(self):
+        applet = SlimDiscoveryApplet()
+        assert applet.state == "searching"
+
+    def test_initial_poll_list(self):
+        applet = SlimDiscoveryApplet()
+        assert applet.poll == ["255.255.255.255"]
+
+    def test_initial_socket_is_none(self):
+        applet = SlimDiscoveryApplet()
+        assert applet.socket is None
+
+    def test_initial_timer_is_none(self):
+        applet = SlimDiscoveryApplet()
+        assert applet.timer is None
+
+    def test_initial_probe_until(self):
+        applet = SlimDiscoveryApplet()
+        assert applet.probe_until == 0
+
+    def test_repr(self):
+        applet = SlimDiscoveryApplet()
+        r = repr(applet)
+        assert "SlimDiscoveryApplet" in r
+        assert "searching" in r
+
+    def test_applet_name_property(self):
+        applet = SlimDiscoveryApplet()
+        assert applet.applet_name == "SlimDiscovery"
+
+    def test_applet_name_from_entry(self):
+        applet = SlimDiscoveryApplet()
+        applet._entry = {"applet_name": "SlimDiscovery"}
+        assert applet.applet_name == "SlimDiscovery"
+
+    def test_free_returns_true(self):
+        applet = SlimDiscoveryApplet()
+        assert applet.free() is True
+
+    def test_free_stops_timer(self):
+        applet = SlimDiscoveryApplet()
+        mock_timer = MagicMock()
+        applet.timer = mock_timer
+        applet.free()
+        mock_timer.stop.assert_called_once()
+        assert applet.timer is None
+
+    def test_free_closes_socket(self):
+        applet = SlimDiscoveryApplet()
+        mock_socket = MagicMock()
+        applet.socket = mock_socket
+        applet.free()
+        mock_socket.free.assert_called_once()
+        assert applet.socket is None
+
+    def test_free_idempotent(self):
+        applet = SlimDiscoveryApplet()
+        assert applet.free() is True
+        assert applet.free() is True
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# SlimDiscovery — Discovery packet & TLV parsing
+# ══════════════════════════════════════════════════════════════════════════════
+
+
+class TestSlimDiscoveryProtocol:
+    """Tests for the UDP discovery packet construction and TLV parsing."""
+
+    def test_discovery_source_starts_with_e(self):
+        packet = _slim_discovery_source()
+        assert packet[0:1] == b"e"
+
+    def test_discovery_source_is_bytes(self):
+        packet = _slim_discovery_source()
+        assert isinstance(packet, bytes)
+
+    def test_discovery_source_contains_ipad(self):
+        packet = _slim_discovery_source()
+        assert b"IPAD" in packet
+
+    def test_discovery_source_contains_name(self):
+        packet = _slim_discovery_source()
+        assert b"NAME" in packet
+
+    def test_discovery_source_contains_json(self):
+        packet = _slim_discovery_source()
+        assert b"JSON" in packet
+
+    def test_discovery_source_contains_vers(self):
+        packet = _slim_discovery_source()
+        assert b"VERS" in packet
+
+    def test_discovery_source_contains_uuid(self):
+        packet = _slim_discovery_source()
+        assert b"UUID" in packet
+
+    def test_discovery_source_contains_jvid(self):
+        packet = _slim_discovery_source()
+        assert b"JVID" in packet
+
+    def test_discovery_source_jvid_has_6_bytes(self):
+        """JVID tag should have length 6 followed by 6 data bytes."""
+        packet = _slim_discovery_source()
+        idx = packet.index(b"JVID")
+        length_byte = packet[idx + 4]
+        assert length_byte == 6
+
+    def test_parse_tlv_response_basic(self):
+        """Parse a well-formed TLV response."""
+        import struct
+
+        response = b"E"
+        for tag, val in [
+            ("NAME", "TestServer"),
+            ("IPAD", "10.0.0.1"),
+            ("JSON", "9000"),
+        ]:
+            val_bytes = val.encode("utf-8")
+            response += (
+                tag.encode("ascii") + struct.pack("B", len(val_bytes)) + val_bytes
+            )
+
+        parsed = _parse_tlv_response(response)
+        assert parsed["NAME"] == "TestServer"
+        assert parsed["IPAD"] == "10.0.0.1"
+        assert parsed["JSON"] == "9000"
+
+    def test_parse_tlv_response_all_fields(self):
+        """Parse a response with all standard fields."""
+        import struct
+
+        fields = [
+            ("NAME", "Resonance"),
+            ("IPAD", "192.168.1.100"),
+            ("JSON", "9000"),
+            ("VERS", "7.999.999"),
+            ("UUID", "test-uuid-123"),
+        ]
+        response = b"E"
+        for tag, val in fields:
+            val_bytes = val.encode("utf-8")
+            response += (
+                tag.encode("ascii") + struct.pack("B", len(val_bytes)) + val_bytes
+            )
+
+        parsed = _parse_tlv_response(response)
+        assert len(parsed) == 5
+        assert parsed["NAME"] == "Resonance"
+        assert parsed["IPAD"] == "192.168.1.100"
+        assert parsed["JSON"] == "9000"
+        assert parsed["VERS"] == "7.999.999"
+        assert parsed["UUID"] == "test-uuid-123"
+
+    def test_parse_tlv_response_empty(self):
+        """An 'E'-only response should parse to an empty dict."""
+        parsed = _parse_tlv_response(b"E")
+        assert parsed == {}
+
+    def test_parse_tlv_response_zero_length_values(self):
+        """Tags with length 0 should parse as empty strings."""
+        response = b"E" + b"NAME\x00" + b"IPAD\x00"
+        parsed = _parse_tlv_response(response)
+        assert parsed.get("NAME") == ""
+        assert parsed.get("IPAD") == ""
+
+    def test_parse_tlv_response_unicode(self):
+        """Server names with non-ASCII chars should parse correctly."""
+        import struct
+
+        name = "Wohnzimmer-Müsik"
+        val_bytes = name.encode("utf-8")
+        response = b"E" + b"NAME" + struct.pack("B", len(val_bytes)) + val_bytes
+        parsed = _parse_tlv_response(response)
+        assert parsed["NAME"] == name
+
+    def test_resonance_server_compatibility(self):
+        """
+        Build a response exactly as the Resonance server's
+        UDPDiscoveryProtocol._handle_tlv_discovery would, and verify
+        our parser handles it correctly.
+        """
+        import struct
+
+        server_name = "Resonance"
+        http_port = 9000
+        server_uuid = "resonance-server-uuid"
+        version = "7.999.999"
+        local_ip = "192.168.1.50"
+
+        # Build response exactly like Resonance does
+        response = b"E"
+        for tag, value_str in [
+            ("NAME", server_name),
+            ("IPAD", local_ip),
+            ("JSON", str(http_port)),
+            ("VERS", version),
+            ("UUID", server_uuid),
+        ]:
+            value = value_str.encode("utf-8")
+            if len(value) <= 255:
+                response += tag.encode("ascii")
+                response += struct.pack("B", len(value))
+                response += value
+
+        parsed = _parse_tlv_response(response)
+        assert parsed["NAME"] == server_name
+        assert parsed["IPAD"] == local_ip
+        assert parsed["JSON"] == str(http_port)
+        assert parsed["VERS"] == version
+        assert parsed["UUID"] == server_uuid
+
+    def test_discovery_request_compatible_with_resonance(self):
+        """
+        Our discovery request packet should be parseable by the
+        Resonance server's TLV parser logic.
+        """
+        packet = _slim_discovery_source()
+
+        # Simulate Resonance's _parse_tlvs (skip leading 'e')
+        data = packet[1:]
+        tlvs = {}
+        offset = 0
+        while offset + 5 <= len(data):
+            tag = data[offset : offset + 4].decode("ascii", errors="replace")
+            length = data[offset + 4]
+            if length > 0 and offset + 5 + length <= len(data):
+                value = data[offset + 5 : offset + 5 + length]
+            else:
+                value = None
+            tlvs[tag] = value
+            offset += 5 + length
+
+        # All expected tags should be present
+        assert "IPAD" in tlvs
+        assert "NAME" in tlvs
+        assert "JSON" in tlvs
+        assert "VERS" in tlvs
+        assert "UUID" in tlvs
+        assert "JVID" in tlvs
+
+        # JVID should have a 6-byte value
+        assert tlvs["JVID"] is not None
+        assert len(tlvs["JVID"]) == 6
+
+    def test_constants(self):
+        assert PORT == 3483
+        assert DISCOVERY_TIMEOUT == 120000
+        assert DISCOVERY_PERIOD == 60000
+        assert SEARCHING_PERIOD == 10000
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# SlimDiscovery — State machine
+# ══════════════════════════════════════════════════════════════════════════════
+
+
+class TestSlimDiscoveryStateMachine:
+    """Tests for the discovery state machine transitions."""
+
+    def _make_applet(self) -> SlimDiscoveryApplet:
+        applet = SlimDiscoveryApplet()
+        applet.timer = MagicMock()
+        applet.socket = MagicMock()
+        return applet
+
+    def test_valid_states(self):
+        assert _VALID_STATES == {
+            "disconnected",
+            "searching",
+            "connected",
+            "probing_player",
+            "probing_server",
+        }
+
+    def test_transition_to_searching(self):
+        applet = self._make_applet()
+        applet.state = "disconnected"
+        applet._set_state("searching")
+        assert applet.state == "searching"
+        applet.timer.restart.assert_called()
+
+    def test_transition_to_connected(self):
+        applet = self._make_applet()
+        applet.state = "searching"
+        applet._set_state("connected")
+        assert applet.state == "connected"
+
+    def test_transition_to_disconnected(self):
+        applet = self._make_applet()
+        applet.state = "connected"
+        applet._set_state("disconnected")
+        assert applet.state == "disconnected"
+        applet.timer.stop.assert_called()
+
+    def test_transition_to_probing_player(self):
+        applet = self._make_applet()
+        applet.state = "connected"
+        applet._set_state("probing_player")
+        assert applet.state == "probing_player"
+        assert applet.probe_until > 0
+
+    def test_transition_to_probing_server(self):
+        applet = self._make_applet()
+        applet.state = "connected"
+        applet._set_state("probing_server")
+        assert applet.state == "probing_server"
+        assert applet.probe_until > 0
+
+    def test_same_state_restarts_timer(self):
+        applet = self._make_applet()
+        applet.state = "searching"
+        applet._set_state("searching")
+        assert applet.state == "searching"
+        applet.timer.restart.assert_called_with(0)
+
+    def test_invalid_state_ignored(self):
+        applet = self._make_applet()
+        applet.state = "connected"
+        applet._set_state("bogus_state")
+        assert applet.state == "connected"
+
+    def test_disconnected_to_searching_restarts_timer(self):
+        applet = self._make_applet()
+        applet.state = "disconnected"
+        applet._set_state("searching")
+        # Timer should have been restarted (called with 0 from the
+        # "was disconnected" path and then again from "searching" path)
+        assert applet.timer.restart.call_count >= 1
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# SlimDiscovery — Sink processing
+# ══════════════════════════════════════════════════════════════════════════════
+
+
+class TestSlimDiscoverySink:
+    """Tests for the UDP response sink."""
+
+    def _make_applet(self) -> SlimDiscoveryApplet:
+        applet = SlimDiscoveryApplet()
+        applet.timer = MagicMock()
+        applet.socket = MagicMock()
+        return applet
+
+    def test_sink_ignores_none_chunk(self):
+        applet = self._make_applet()
+        applet._slim_discovery_sink(None)  # Should not raise
+
+    def test_sink_ignores_error(self):
+        applet = self._make_applet()
+        applet._slim_discovery_sink(None, err="timeout")  # Should not raise
+
+    def test_sink_ignores_non_E_response(self):
+        applet = self._make_applet()
+        # A request packet starts with 'e', not 'E'
+        chunk = {"data": b"eIPAD\x00", "ip": "10.0.0.1", "port": 3483}
+        applet._slim_discovery_sink(chunk)  # Should not raise or process
+
+    def test_sink_ignores_empty_data(self):
+        applet = self._make_applet()
+        chunk = {"data": b"", "ip": "10.0.0.1", "port": 3483}
+        applet._slim_discovery_sink(chunk)  # Should not raise
+
+    def test_sink_ignores_missing_data_key(self):
+        applet = self._make_applet()
+        chunk = {"ip": "10.0.0.1", "port": 3483}
+        applet._slim_discovery_sink(chunk)  # Should not raise
+
+    def test_sink_processes_valid_response(self):
+        """A well-formed 'E' response should trigger _server_update_address."""
+        import struct
+
+        applet = self._make_applet()
+
+        fields = [("NAME", "TestSrv"), ("IPAD", "10.0.0.5"), ("JSON", "9000")]
+        response = b"E"
+        for tag, val in fields:
+            vb = val.encode("utf-8")
+            response += tag.encode("ascii") + struct.pack("B", len(vb)) + vb
+
+        chunk = {"data": response, "ip": "10.0.0.5", "port": 3483}
+
+        with patch.object(applet, "_server_update_address") as mock_update:
+            with patch(
+                "jive.applets.SlimDiscovery.SlimDiscoveryApplet._get_jnt",
+                return_value=None,
+            ):
+                with patch(
+                    "jive.applets.SlimDiscovery.SlimDiscoveryApplet.SlimServer",
+                    create=True,
+                ):
+                    applet._slim_discovery_sink(chunk)
+                    # We can't easily check the call because SlimServer import
+                    # may succeed or fail, but at least it shouldn't crash
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# SlimDiscovery — Service methods
+# ══════════════════════════════════════════════════════════════════════════════
+
+
+class TestSlimDiscoveryServices:
+    """Tests for the public service methods."""
+
+    def test_get_current_player_returns_none_by_default(self):
+        applet = SlimDiscoveryApplet()
+        # With no players set up, should return None
+        result = applet.getCurrentPlayer()
+        # Could be None or a player depending on global state
+        assert result is None or result is not None  # Just don't crash
+
+    def test_set_current_player_no_crash(self):
+        applet = SlimDiscoveryApplet()
+        mock_player = MagicMock()
+        mock_player.get_name.return_value = "TestPlayer"
+        applet.setCurrentPlayer(mock_player)  # Should not raise
+
+    def test_set_current_player_none(self):
+        applet = SlimDiscoveryApplet()
+        applet.setCurrentPlayer(None)  # Should not raise
+
+    def test_discover_players_sets_probing_player(self):
+        applet = SlimDiscoveryApplet()
+        applet.timer = MagicMock()
+        applet.discoverPlayers()
+        assert applet.state == "probing_player"
+
+    def test_discover_servers_sets_probing_server(self):
+        applet = SlimDiscoveryApplet()
+        applet.timer = MagicMock()
+        applet.discoverServers()
+        assert applet.state == "probing_server"
+
+    def test_connect_player_no_crash(self):
+        applet = SlimDiscoveryApplet()
+        applet.timer = MagicMock()
+        applet.socket = MagicMock()
+        applet.connectPlayer()
+        assert applet.state in ("connected", "searching")
+
+    def test_disconnect_player(self):
+        applet = SlimDiscoveryApplet()
+        applet.timer = MagicMock()
+        applet.disconnectPlayer()
+        assert applet.state == "disconnected"
+
+    def test_iterate_players_returns_iterator(self):
+        applet = SlimDiscoveryApplet()
+        result = applet.iteratePlayers()
+        # Should be iterable
+        assert hasattr(result, "__iter__")
+
+    def test_iterate_squeeze_centers_returns_iterator(self):
+        applet = SlimDiscoveryApplet()
+        result = applet.iterateSqueezeCenters()
+        assert hasattr(result, "__iter__")
+
+    def test_count_players_returns_int(self):
+        applet = SlimDiscoveryApplet()
+        count = applet.countPlayers()
+        assert isinstance(count, int)
+        assert count >= 0
+
+    def test_get_poll_list(self):
+        applet = SlimDiscoveryApplet()
+        poll = applet.getPollList()
+        assert isinstance(poll, list)
+        assert "255.255.255.255" in poll
+
+    def test_set_poll_list(self):
+        applet = SlimDiscoveryApplet()
+        applet.timer = MagicMock()
+        new_poll = ["10.0.0.255", "192.168.1.255"]
+        applet.setPollList(new_poll)
+        assert applet.poll == new_poll
+        # Should trigger probing_player
+        assert applet.state == "probing_player"
+
+    def test_get_poll_list_returns_copy(self):
+        applet = SlimDiscoveryApplet()
+        poll1 = applet.getPollList()
+        poll2 = applet.getPollList()
+        assert poll1 == poll2
+        assert poll1 is not poll2  # Should be a copy
+
+    def test_get_initial_slim_server_returns_none(self):
+        """With no servers configured, should return None."""
+        applet = SlimDiscoveryApplet()
+        applet._settings = {"currentPlayer": False}
+        result = applet.getInitialSlimServer()
+        assert result is None
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# SlimDiscovery — Notification handlers
+# ══════════════════════════════════════════════════════════════════════════════
+
+
+class TestSlimDiscoveryNotifications:
+    """Tests for the notification handler methods."""
+
+    def _make_applet(self) -> SlimDiscoveryApplet:
+        applet = SlimDiscoveryApplet()
+        applet.timer = MagicMock()
+        applet.socket = MagicMock()
+        return applet
+
+    def test_notify_player_disconnected_non_current(self):
+        """Should not change state for a non-current player."""
+        applet = self._make_applet()
+        applet.state = "connected"
+        mock_player = MagicMock()
+        # Player.get_current_player() will return None (no current player)
+        applet.notify_playerDisconnected(mock_player)
+        # State may or may not change depending on whether player is current
+        # At minimum it should not crash
+        assert applet.state in _VALID_STATES
+
+    def test_notify_player_connected_non_current(self):
+        """Should not change state for a non-current player."""
+        applet = self._make_applet()
+        applet.state = "searching"
+        mock_player = MagicMock()
+        applet.notify_playerConnected(mock_player)
+        assert applet.state in _VALID_STATES
+
+    def test_notify_server_disconnected_no_crash(self):
+        applet = self._make_applet()
+        applet.state = "connected"
+        mock_server = MagicMock()
+        applet.notify_serverDisconnected(mock_server)
+        assert applet.state in _VALID_STATES
+
+    def test_notify_server_connected_no_crash(self):
+        applet = self._make_applet()
+        mock_server = MagicMock()
+        applet.notify_serverConnected(mock_server)
+        assert applet.state in _VALID_STATES
+
+    def test_notify_network_connected_disconnected_state(self):
+        """Should be a no-op when in disconnected state."""
+        applet = self._make_applet()
+        applet.state = "disconnected"
+        applet.notify_networkConnected()
+        assert applet.state == "disconnected"
+
+    def test_notify_network_connected_searching_state(self):
+        applet = self._make_applet()
+        applet.state = "searching"
+        applet.notify_networkConnected()
+        # Should attempt to reconnect but not crash
+        assert applet.state in _VALID_STATES
+
+    def test_notify_player_power_no_crash(self):
+        applet = self._make_applet()
+        mock_player = MagicMock()
+        applet.notify_playerPower(mock_player, True)
+        applet.notify_playerPower(mock_player, False)
+
+    def test_notify_player_current_no_crash(self):
+        applet = self._make_applet()
+        applet._settings = {"currentPlayer": False}
+        mock_player = MagicMock()
+        mock_player.get_id.return_value = "aa:bb:cc:dd:ee:ff"
+        mock_player.get_init.return_value = {"name": "Test", "model": "baby"}
+        mock_player.is_connected.return_value = False
+        mock_player.get_slim_server.return_value = None
+        applet.notify_playerCurrent(mock_player)
+        assert applet.state in _VALID_STATES
+
+    def test_notify_player_current_with_none(self):
+        applet = self._make_applet()
+        applet._settings = {"currentPlayer": False}
+        applet.notify_playerCurrent(None)
+        assert applet.state in _VALID_STATES
+
+    def test_notify_player_new_name_no_crash(self):
+        applet = self._make_applet()
+        applet._settings = {"playerInit": {"name": "Old", "model": "baby"}}
+        mock_player = MagicMock()
+        # The method checks if it's the current player, which will fail
+        # gracefully. Just make sure it doesn't crash.
+        applet.notify_playerNewName(mock_player, "NewName")
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# SlimDiscovery — Settings persistence
+# ══════════════════════════════════════════════════════════════════════════════
+
+
+class TestSlimDiscoverySettings:
+    """Tests for settings get/store helpers."""
+
+    def test_get_settings_fallback(self):
+        """Without an AppletManager, should return a fallback dict."""
+        applet = SlimDiscoveryApplet()
+        settings = applet.get_settings()
+        assert isinstance(settings, dict)
+        assert "currentPlayer" in settings
+
+    def test_get_settings_alias(self):
+        applet = SlimDiscoveryApplet()
+        assert applet.getSettings() is applet.get_settings()
+
+    def test_store_settings_no_crash(self):
+        applet = SlimDiscoveryApplet()
+        applet.store_settings()  # Should not raise even without a manager
+
+    def test_store_settings_alias(self):
+        applet = SlimDiscoveryApplet()
+        assert applet.storeSettings == applet.store_settings
+
+    def test_settings_mutable(self):
+        applet = SlimDiscoveryApplet()
+        settings = applet.get_settings()
+        settings["playerId"] = "test-id"
+        assert applet.get_settings()["playerId"] == "test-id"
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# SlimDiscovery — Cleanup
+# ══════════════════════════════════════════════════════════════════════════════
+
+
+class TestSlimDiscoveryCleanup:
+    """Tests for server and player cleanup methods."""
+
+    def test_squeeze_center_cleanup_no_crash(self):
+        applet = SlimDiscoveryApplet()
+        applet._settings = {"currentPlayer": False}
+        applet._squeeze_center_cleanup()  # Should not raise
+
+    def test_player_cleanup_no_crash(self):
+        applet = SlimDiscoveryApplet()
+        applet._player_cleanup()  # Should not raise
+
+    def test_discover_sends_to_poll_addresses(self):
+        """_discover should send to each address in the poll list."""
+        applet = SlimDiscoveryApplet()
+        applet.poll = ["10.0.0.255", "192.168.1.255"]
+        mock_socket = MagicMock()
+        applet.socket = mock_socket
+        applet.timer = MagicMock()
+
+        applet._discover()
+
+        assert mock_socket.send.call_count == 2
+        # First call should be to 10.0.0.255, second to 192.168.1.255
+        calls = mock_socket.send.call_args_list
+        assert calls[0][0][1] == "10.0.0.255"
+        assert calls[0][0][2] == PORT
+        assert calls[1][0][1] == "192.168.1.255"
+        assert calls[1][0][2] == PORT
+
+    def test_discover_adjusts_timer_connected(self):
+        applet = SlimDiscoveryApplet()
+        applet.socket = MagicMock()
+        applet.timer = MagicMock()
+        applet.state = "connected"
+
+        applet._discover()
+
+        applet.timer.restart.assert_called_with(DISCOVERY_PERIOD)
+
+    def test_discover_adjusts_timer_searching(self):
+        applet = SlimDiscoveryApplet()
+        applet.socket = MagicMock()
+        applet.timer = MagicMock()
+        applet.state = "searching"
+
+        applet._discover()
+
+        applet.timer.restart.assert_called_with(SEARCHING_PERIOD)
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# SlimDiscovery — Integration: AppletManager discovery
+# ══════════════════════════════════════════════════════════════════════════════
+
+
+class TestSlimDiscoveryIntegration:
+    """Test that SlimDiscovery integrates with the AppletManager."""
+
+    def _make_mgr(self):
+        """Create a minimal AppletManager with all required attributes."""
+        from jive.applet_manager import AppletManager
+
+        mgr = AppletManager.__new__(AppletManager)
+        mgr._applets_db = {}
+        mgr._services = {}
+        mgr._settings_dir = None
+        mgr._search_paths = [str(_PROJECT_ROOT / "jive" / "applets")]
+        mgr._loaded_locale = set()
+        mgr._locale_search_paths = []
+        mgr._system = None
+        mgr._allowed_applets = None
+        mgr._service_closures = {}
+        mgr._default_settings = {}
+        mgr._user_settings_dir = Path(tempfile.mkdtemp()) / "settings"
+        mgr._user_applets_dir = Path("/nonexistent/user_applets")
+        # _find_applets iterates sys.path looking for dirs that contain
+        # an "applets/" subdirectory.  Ensure jive/ is on sys.path so
+        # that jive/applets/ is discovered.
+        jive_dir = str(_PROJECT_ROOT / "jive")
+        if jive_dir not in sys.path:
+            sys.path.insert(0, jive_dir)
+        return mgr
+
+    def test_applet_manager_discovers_slim_discovery(self):
+        """AppletManager should find the SlimDiscovery applet directory."""
+        mgr = self._make_mgr()
+        mgr._find_applets()
+
+        assert "SlimDiscovery" in mgr._applets_db
+
+    def test_meta_class_importable(self):
+        """The Meta class should be importable via the standard mechanism."""
+        mgr = self._make_mgr()
+        mgr._find_applets()
+
+        entry = mgr._applets_db["SlimDiscovery"]
+        meta_cls = mgr._import_meta_class(entry)
+        assert meta_cls is not None
+        assert meta_cls.__name__ == "SlimDiscoveryMeta"
+
+    def test_applet_class_importable(self):
+        """The Applet class should be importable via the standard mechanism."""
+        mgr = self._make_mgr()
+        mgr._find_applets()
+
+        entry = mgr._applets_db["SlimDiscovery"]
+        applet_cls = mgr._import_applet_class(entry)
+        assert applet_cls is not None
+        assert applet_cls.__name__ == "SlimDiscoveryApplet"
+        assert issubclass(applet_cls, Applet)

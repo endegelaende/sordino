@@ -67,6 +67,7 @@ _ALL_APPLET_NAMES = frozenset(
         "QVGAbaseSkin",
         "SelectPlayer",
         "SlimBrowser",
+        "SlimDiscovery",
     }
 )
 
