@@ -68,6 +68,7 @@ _ALL_APPLET_NAMES = frozenset(
         "SelectPlayer",
         "SlimBrowser",
         "SlimDiscovery",
+        "SlimMenus",
     }
 )
 

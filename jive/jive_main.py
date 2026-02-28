@@ -1052,7 +1052,7 @@ class JiveMain:
     def remove_item_by_id(self, item_id: str) -> None:
         """Remove a menu item by its ID (delegates to HomeMenu)."""
         if self.home_menu is not None:
-            if hasattr(self.home_menu, 'remove_item_by_id'):
+            if hasattr(self.home_menu, "remove_item_by_id"):
                 self.home_menu.remove_item_by_id(item_id)
             else:
                 # Fallback: look up by id and remove
@@ -1077,6 +1077,51 @@ class JiveMain:
         if self.home_menu is not None:
             self.home_menu.close_to_home(transition)
 
+    def set_title(self, title: Optional[str]) -> None:
+        """Set the home-screen title (e.g. the current player name)."""
+        self._title = title
+        if self.home_menu is not None and hasattr(self.home_menu, "set_title"):
+            self.home_menu.set_title(title)
+
+    def open_node_by_id(self, node_id: str, transition: bool = False) -> None:
+        """Open a menu node by its ID.
+
+        In the full UI this navigates to the node's submenu.  In
+        headless mode this is recorded but has no visual effect.
+        """
+        if self.home_menu is not None and hasattr(self.home_menu, "open_node_by_id"):
+            self.home_menu.open_node_by_id(node_id, transition)
+
+    def exists(self, item_id: str) -> bool:
+        """Return ``True`` if a menu item or node with *item_id* exists."""
+        if self.home_menu is not None:
+            table = self.home_menu.get_menu_table()
+            if item_id in table:
+                return True
+            if hasattr(self.home_menu, "get_node_table"):
+                nodes = self.home_menu.get_node_table()
+                if item_id in nodes:
+                    return True
+        return False
+
+    def lock_item(
+        self,
+        item: Dict[str, Any],
+        cancel_callback: Optional[Callable[[], None]] = None,
+    ) -> None:
+        """Lock a menu item (prevent re-selection while loading).
+
+        In the full UI this shows a spinner on the item.  In headless
+        mode we just record the lock state.
+        """
+        if self.home_menu is not None and hasattr(self.home_menu, "lock_item"):
+            self.home_menu.lock_item(item, cancel_callback)
+
+    def unlock_item(self, item: Dict[str, Any]) -> None:
+        """Unlock a previously locked menu item."""
+        if self.home_menu is not None and hasattr(self.home_menu, "unlock_item"):
+            self.home_menu.unlock_item(item)
+
     # Lua-compatible camelCase aliases
     addNode = add_node
     addItem = add_item
@@ -1085,6 +1130,10 @@ class JiveMain:
     getMenuTable = get_menu_table
     getNodeTable = get_node_table
     closeToHome = close_to_home
+    setTitle = set_title
+    openNodeById = open_node_by_id
+    lockItem = lock_item
+    unlockItem = unlock_item
 
     # ------------------------------------------------------------------
     # Event loop

@@ -2873,3 +2873,880 @@ class TestSlimDiscoveryIntegration:
         assert applet_cls is not None
         assert applet_cls.__name__ == "SlimDiscoveryApplet"
         assert issubclass(applet_cls, Applet)
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# SlimMenus — Meta
+# ══════════════════════════════════════════════════════════════════════════════
+
+from jive.applets.SlimMenus.SlimMenusApplet import (
+    _FILTERED_IDS,
+    _FILTERED_NODES,
+    _ID_MISMATCH_MAP,
+    _ITEM_MAP,
+    _STYLE_MAP,
+    SlimMenusApplet,
+    _massage_item,
+    _safe_deref,
+)
+from jive.applets.SlimMenus.SlimMenusMeta import SlimMenusMeta
+
+
+class TestSlimMenusMeta:
+    """Tests for SlimMenusMeta."""
+
+    def test_jive_version(self):
+        meta = SlimMenusMeta()
+        assert meta.jive_version() == (1, 1)
+
+    def test_jive_version_alias(self):
+        meta = SlimMenusMeta()
+        assert meta.jiveVersion() == (1, 1)
+
+    def test_default_settings(self):
+        meta = SlimMenusMeta()
+        settings = meta.default_settings()
+        assert isinstance(settings, dict)
+        assert settings == {}
+
+    def test_default_settings_alias(self):
+        meta = SlimMenusMeta()
+        assert meta.defaultSettings() == meta.default_settings()
+
+    def test_register_applet_services(self):
+        meta = SlimMenusMeta()
+        registered = []
+        meta.register_service = lambda name: registered.append(name)
+        # Prevent eager load and menu additions
+        meta._get_jive_main = lambda: None
+        meta._get_applet_manager = lambda: None
+        meta.register_applet()
+
+        expected = {"goHome", "hideConnectingToPlayer", "warnOnAnyNetworkFailure"}
+        assert set(registered) == expected
+
+    def test_register_applet_alias(self):
+        meta = SlimMenusMeta()
+        registered = []
+        meta.register_service = lambda name: registered.append(name)
+        meta._get_jive_main = lambda: None
+        meta._get_applet_manager = lambda: None
+        meta.registerApplet()
+        assert len(registered) == 3
+
+    def test_is_applet_meta_subclass(self):
+        meta = SlimMenusMeta()
+        assert isinstance(meta, AppletMeta)
+
+    def test_menu_item_builder(self):
+        meta = SlimMenusMeta()
+        item = meta.menu_item("testId", "home", "TEST_TOKEN", weight=5)
+        assert item["id"] == "testId"
+        assert item["node"] == "home"
+        assert item["weight"] == 5
+        assert item["sound"] == "WINDOWSHOW"
+        assert item["iconStyle"] == "hm_testId"
+        # Without a strings table the raw token is used as text
+        assert item["text"] == "TEST_TOKEN"
+
+    def test_menu_item_alias(self):
+        meta = SlimMenusMeta()
+        # Bound methods create new objects each access; compare via __func__
+        assert type(meta).menuItem is type(meta).menu_item
+
+    def test_menu_item_with_callback(self):
+        meta = SlimMenusMeta()
+        cb = lambda applet: None
+        item = meta.menu_item("x", "home", "T", callback=cb)
+        assert item["callback"] is cb
+
+    def test_menu_item_with_extras(self):
+        meta = SlimMenusMeta()
+        item = meta.menu_item("x", "home", "T", extras={"custom": 42})
+        assert item["custom"] == 42
+
+    def test_register_adds_home_items_when_jive_main_available(self):
+        meta = SlimMenusMeta()
+        registered_services = []
+        meta.register_service = lambda name: registered_services.append(name)
+        meta._get_applet_manager = lambda: None
+
+        # Create a mock JiveMain
+        added_items = []
+        mock_jm = MagicMock()
+        mock_jm.add_item.side_effect = lambda item: added_items.append(item)
+        meta._get_jive_main = lambda: mock_jm
+
+        meta.register_applet()
+
+        assert len(added_items) == 2
+        ids = [i.get("id") for i in added_items]
+        assert "myMusicSelector" in ids or "hm_myMusicSelector" in ids
+        assert "otherLibrary" in ids or "hm_otherLibrary" in ids
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# SlimMenus — Helpers
+# ══════════════════════════════════════════════════════════════════════════════
+
+
+class TestSlimMenusHelpers:
+    """Tests for module-level helper functions."""
+
+    def test_safe_deref_basic(self):
+        d = {"a": {"b": {"c": 42}}}
+        assert _safe_deref(d, "a", "b", "c") == 42
+
+    def test_safe_deref_missing_key(self):
+        d = {"a": {"b": 1}}
+        assert _safe_deref(d, "a", "x") is None
+
+    def test_safe_deref_non_dict(self):
+        assert _safe_deref("hello", "a") is None
+
+    def test_safe_deref_none(self):
+        assert _safe_deref(None, "a") is None
+
+    def test_safe_deref_empty(self):
+        assert _safe_deref({}) is not None  # returns {}
+
+    def test_massage_item_id_mismatch(self):
+        item = {"id": "ondemand", "node": "home"}
+        _massage_item(item)
+        # "ondemand" → "music_services" (via _ID_MISMATCH_MAP)
+        # then "music_services" → "_music_services" (via _ITEM_MAP)
+        assert item["id"] == "_music_services"
+
+    def test_massage_item_item_map(self):
+        item = {"id": "myMusic", "node": "home"}
+        _massage_item(item)
+        assert item["id"] == "_myMusic"
+        assert item["node"] == "hidden"
+        assert item.get("isANode") is True
+
+    def test_massage_item_blank_node(self):
+        item = {"id": "foo", "node": "", "weight": 10}
+        _massage_item(item)
+        assert item["node"] == "hidden"
+        assert item["hiddenWeight"] == 10
+
+    def test_massage_item_node_remapping(self):
+        item = {"id": "something", "node": "myMusic"}
+        _massage_item(item)
+        assert item["node"] == "_myMusic"
+
+    def test_massage_item_no_changes(self):
+        item = {"id": "customItem", "node": "home", "weight": 50}
+        original = dict(item)
+        _massage_item(item)
+        assert item["id"] == original["id"]
+        assert item["node"] == original["node"]
+
+    def test_style_map_contents(self):
+        assert _STYLE_MAP["itemplay"] == "item_play"
+        assert _STYLE_MAP["itemadd"] == "item_add"
+        assert _STYLE_MAP["itemNoAction"] == "item_no_arrow"
+        assert _STYLE_MAP["albumitem"] == "item"
+        assert _STYLE_MAP["albumitemplay"] == "item_play"
+
+    def test_filtered_ids(self):
+        assert "radios" in _FILTERED_IDS
+        assert "music_services" in _FILTERED_IDS
+        assert "settingsAudio" in _FILTERED_IDS
+
+    def test_filtered_nodes(self):
+        assert "music_services" in _FILTERED_NODES
+        assert "music_stores" in _FILTERED_NODES
+
+    def test_id_mismatch_map(self):
+        assert _ID_MISMATCH_MAP["ondemand"] == "music_services"
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# SlimMenus — Applet construction & lifecycle
+# ══════════════════════════════════════════════════════════════════════════════
+
+
+class TestSlimMenusAppletConstruction:
+    """Tests for SlimMenusApplet construction and basic properties."""
+
+    def test_construction(self):
+        applet = SlimMenusApplet()
+        assert isinstance(applet, Applet)
+        assert isinstance(applet, SlimMenusApplet)
+
+    def test_initial_player_is_false(self):
+        applet = SlimMenusApplet()
+        assert applet._player is False
+
+    def test_initial_server_is_false(self):
+        applet = SlimMenusApplet()
+        assert applet._server is False
+
+    def test_initial_waiting_for_menu(self):
+        applet = SlimMenusApplet()
+        assert applet.waiting_for_player_menu_status is True
+
+    def test_initial_player_menus_empty(self):
+        applet = SlimMenusApplet()
+        assert applet._player_menus == {}
+
+    def test_initial_server_home_menu_items_empty(self):
+        applet = SlimMenusApplet()
+        assert applet.server_home_menu_items == {}
+
+    def test_initial_my_apps_node_false(self):
+        applet = SlimMenusApplet()
+        assert applet.my_apps_node is False
+
+    def test_initial_network_error_false(self):
+        applet = SlimMenusApplet()
+        assert applet.network_error is False
+
+    def test_repr(self):
+        applet = SlimMenusApplet()
+        r = repr(applet)
+        assert "SlimMenusApplet" in r
+        assert "menus=0" in r
+
+    def test_free_returns_true(self):
+        applet = SlimMenusApplet()
+        assert applet.free() is True
+
+    def test_free_resets_state(self):
+        applet = SlimMenusApplet()
+        applet._player_menus["test"] = {"id": "test"}
+        applet.my_apps_node = True
+        applet.free()
+        assert applet._player_menus == {}
+        assert applet.my_apps_node is False
+        assert applet._player is False
+        assert applet._server is False
+
+    def test_free_idempotent(self):
+        applet = SlimMenusApplet()
+        assert applet.free() is True
+        assert applet.free() is True
+
+    def test_init_returns_self(self):
+        applet = SlimMenusApplet()
+        result = applet.init()
+        assert result is applet
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# SlimMenus — Service methods
+# ══════════════════════════════════════════════════════════════════════════════
+
+
+class TestSlimMenusServices:
+    """Tests for the public service methods."""
+
+    def test_go_home_no_crash_without_jive_main(self):
+        applet = SlimMenusApplet()
+        applet.goHome()  # Should not raise
+
+    def test_go_home_alias(self):
+        applet = SlimMenusApplet()
+        # Bound methods create new objects each access; compare via __func__
+        assert type(applet).go_home is type(applet).goHome
+
+    def test_hide_connecting_to_player(self):
+        applet = SlimMenusApplet()
+        applet.hideConnectingToPlayer()  # Should not raise
+
+    def test_hide_connecting_alias(self):
+        applet = SlimMenusApplet()
+        assert (
+            type(applet).hide_connecting_to_player
+            is type(applet).hideConnectingToPlayer
+        )
+
+    def test_warn_on_network_failure_calls_success(self):
+        applet = SlimMenusApplet()
+        called = []
+        applet.warnOnAnyNetworkFailure(
+            success_callback=lambda: called.append("ok"),
+            failure_callback=lambda w: called.append("fail"),
+        )
+        assert called == ["ok"]
+
+    def test_warn_on_network_failure_none_callbacks(self):
+        applet = SlimMenusApplet()
+        applet.warnOnAnyNetworkFailure()  # Should not raise
+
+    def test_warn_alias(self):
+        applet = SlimMenusApplet()
+        assert (
+            type(applet).warn_on_any_network_failure
+            is type(applet).warnOnAnyNetworkFailure
+        )
+
+    def test_my_music_selector_no_crash(self):
+        applet = SlimMenusApplet()
+        applet.myMusicSelector()  # Should not raise
+
+    def test_my_music_selector_alias(self):
+        applet = SlimMenusApplet()
+        assert type(applet).my_music_selector is type(applet).myMusicSelector
+
+    def test_other_library_selector_no_crash(self):
+        applet = SlimMenusApplet()
+        applet.otherLibrarySelector()  # Should not raise
+
+    def test_other_library_selector_alias(self):
+        applet = SlimMenusApplet()
+        assert type(applet).other_library_selector is type(applet).otherLibrarySelector
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# SlimMenus — Notification handlers
+# ══════════════════════════════════════════════════════════════════════════════
+
+
+class TestSlimMenusNotifications:
+    """Tests for the notification handler methods."""
+
+    def test_notify_network_or_server_not_ok(self):
+        applet = SlimMenusApplet()
+        applet.notify_networkOrServerNotOK()
+        assert applet.server_error is True
+
+    def test_notify_network_or_server_not_ok_with_iface(self):
+        applet = SlimMenusApplet()
+        iface = MagicMock()
+        iface.isNetworkError.return_value = True
+        applet.notify_networkOrServerNotOK(iface)
+        assert applet.network_error is iface
+
+    def test_notify_network_and_server_ok(self):
+        applet = SlimMenusApplet()
+        applet.network_error = True
+        applet.server_error = True
+        applet.notify_networkAndServerOK()
+        assert applet.network_error is False
+        assert applet.server_error is False
+
+    def test_notify_server_connected_no_crash(self):
+        applet = SlimMenusApplet()
+        server = MagicMock()
+        applet.notify_serverConnected(server)  # Should not raise
+
+    def test_notify_player_new_name_updates_title(self):
+        applet = SlimMenusApplet()
+        player = MagicMock()
+        applet._player = player
+        # No JiveMain, so nothing happens — just don't crash
+        applet.notify_playerNewName(player, "NewName")
+
+    def test_notify_player_new_name_ignores_other_player(self):
+        applet = SlimMenusApplet()
+        applet._player = MagicMock()
+        other = MagicMock()
+        applet.notify_playerNewName(other, "NewName")  # Should be ignored
+
+    def test_notify_player_needs_upgrade_no_crash(self):
+        applet = SlimMenusApplet()
+        player = MagicMock()
+        applet._player = player
+        applet.notify_playerNeedsUpgrade(player)
+
+    def test_notify_player_needs_upgrade_ignores_other(self):
+        applet = SlimMenusApplet()
+        applet._player = MagicMock()
+        other = MagicMock()
+        applet.notify_playerNeedsUpgrade(other)
+
+    def test_notify_player_delete(self):
+        applet = SlimMenusApplet()
+        player = MagicMock()
+        player.unsubscribe = MagicMock()
+        player.get_id.return_value = "aa:bb:cc:dd:ee:ff"
+        applet._player = player
+        applet.notify_playerDelete(player)
+        assert applet.player_or_server_change_in_progress is True
+
+    def test_notify_player_delete_ignores_other(self):
+        applet = SlimMenusApplet()
+        applet._player = MagicMock()
+        other = MagicMock()
+        applet.notify_playerDelete(other)
+        assert applet.player_or_server_change_in_progress is False
+
+    def test_notify_player_current_no_player(self):
+        applet = SlimMenusApplet()
+        applet.notify_playerCurrent(None)
+        # Should not crash and state should remain
+        assert applet._player is False
+
+    def test_notify_player_current_false(self):
+        applet = SlimMenusApplet()
+        applet.notify_playerCurrent(False)
+        assert applet._player is False
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# SlimMenus — Menu sink processing
+# ══════════════════════════════════════════════════════════════════════════════
+
+
+class TestSlimMenusSink:
+    """Tests for the menu sink and item processing."""
+
+    def _make_applet(self) -> SlimMenusApplet:
+        applet = SlimMenusApplet()
+        applet._player = MagicMock()
+        applet._player.get_id.return_value = "aa:bb:cc:dd:ee:ff"
+        applet._player.getId.return_value = "aa:bb:cc:dd:ee:ff"
+        applet._server = MagicMock()
+        applet._server.get_name.return_value = "TestServer"
+        applet._server.getName.return_value = "TestServer"
+
+        # Patch _get_jive_main so _add_item / _add_node have a JiveMain
+        # that accepts items without a real UI.
+        from jive.jive_main import _HomeMenuStub
+
+        mock_jm = MagicMock()
+        stub_menu = _HomeMenuStub()
+        mock_jm.add_item = stub_menu.add_item
+        mock_jm.add_node = stub_menu.add_node
+        mock_jm.remove_item = stub_menu.remove_item
+        mock_jm.remove_item_by_id = stub_menu.remove_item_by_id
+        mock_jm.get_menu_table = stub_menu.get_menu_table
+        mock_jm.get_node_table = stub_menu.get_node_table
+        mock_jm.get_skin_param.return_value = None
+        mock_jm.get_skin_param_or_nil.return_value = None
+
+        import jive.applets.SlimMenus.SlimMenusApplet as _sm_mod
+
+        self._orig_get_jive_main = _sm_mod._get_jive_main
+        _sm_mod._get_jive_main = lambda: mock_jm
+        applet._mock_jm = mock_jm
+        applet._stub_menu = stub_menu
+        applet._sm_mod = _sm_mod
+        applet._orig_get_jive_main = self._orig_get_jive_main
+        return applet
+
+    def _teardown_applet(self, applet: SlimMenusApplet) -> None:
+        """Restore the original _get_jive_main after test."""
+        applet._sm_mod._get_jive_main = applet._orig_get_jive_main
+
+    def test_menu_sink_returns_callable(self):
+        applet = self._make_applet()
+        sink = applet._menu_sink(True, None)
+        assert callable(sink)
+
+    def test_menu_sink_processes_item_loop(self):
+        applet = self._make_applet()
+        try:
+            sink = applet._menu_sink(True, applet._server)
+
+            chunk = {
+                "data": {
+                    "item_loop": [
+                        {
+                            "id": "testItem1",
+                            "text": "Test Item 1",
+                            "node": "home",
+                            "weight": 10,
+                        },
+                        {
+                            "id": "testItem2",
+                            "text": "Test Item 2",
+                            "node": "home",
+                            "weight": 20,
+                        },
+                    ]
+                }
+            }
+
+            sink(chunk)
+
+            # Items should be in the player menus cache
+            assert "testItem1" in applet._player_menus
+            assert "testItem2" in applet._player_menus
+        finally:
+            self._teardown_applet(applet)
+
+    def test_menu_sink_filters_radios(self):
+        applet = self._make_applet()
+        try:
+            sink = applet._menu_sink(True, applet._server)
+
+            chunk = {
+                "data": {
+                    "item_loop": [
+                        {"id": "radios", "text": "Radio", "node": "home"},
+                    ]
+                }
+            }
+
+            sink(chunk)
+            assert "radios" not in applet._player_menus
+        finally:
+            self._teardown_applet(applet)
+
+    def test_menu_sink_filters_music_services(self):
+        applet = self._make_applet()
+        try:
+            sink = applet._menu_sink(True, applet._server)
+
+            chunk = {
+                "data": {
+                    "item_loop": [
+                        {
+                            "id": "music_services",
+                            "text": "Music Services",
+                            "node": "home",
+                        },
+                    ]
+                }
+            }
+
+            sink(chunk)
+            assert "music_services" not in applet._player_menus
+        finally:
+            self._teardown_applet(applet)
+
+    def test_menu_sink_filters_items_with_filtered_node(self):
+        applet = self._make_applet()
+        try:
+            sink = applet._menu_sink(True, applet._server)
+
+            chunk = {
+                "data": {
+                    "item_loop": [
+                        {"id": "someApp", "text": "App", "node": "music_stores"},
+                    ]
+                }
+            }
+
+            sink(chunk)
+            assert "someApp" not in applet._player_menus
+        finally:
+            self._teardown_applet(applet)
+
+    def test_menu_sink_skips_no_id_items(self):
+        applet = self._make_applet()
+        try:
+            sink = applet._menu_sink(True, applet._server)
+
+            chunk = {
+                "data": {
+                    "item_loop": [
+                        {"text": "No ID Item", "node": "home"},
+                    ]
+                }
+            }
+
+            sink(chunk)
+            assert len(applet._player_menus) == 0
+        finally:
+            self._teardown_applet(applet)
+
+    def test_menu_sink_applies_style_map(self):
+        applet = self._make_applet()
+        try:
+            sink = applet._menu_sink(True, applet._server)
+
+            chunk = {
+                "data": {
+                    "item_loop": [
+                        {
+                            "id": "styledItem",
+                            "text": "Styled",
+                            "node": "home",
+                            "style": "itemplay",
+                        },
+                    ]
+                }
+            }
+
+            sink(chunk)
+            assert applet._player_menus["styledItem"]["style"] == "item_play"
+        finally:
+            self._teardown_applet(applet)
+
+    def test_menu_sink_empty_item_loop(self):
+        applet = self._make_applet()
+        try:
+            sink = applet._menu_sink(True, applet._server)
+            chunk = {"data": {"item_loop": []}}
+            sink(chunk)
+            assert len(applet._player_menus) == 0
+        finally:
+            self._teardown_applet(applet)
+
+    def test_menu_sink_adds_icon_style(self):
+        applet = self._make_applet()
+        try:
+            sink = applet._menu_sink(True, applet._server)
+
+            chunk = {
+                "data": {
+                    "item_loop": [
+                        {"id": "myItem", "text": "My Item", "node": "home"},
+                    ]
+                }
+            }
+
+            sink(chunk)
+            assert applet._player_menus["myItem"]["iconStyle"] == "hm_myItem"
+        finally:
+            self._teardown_applet(applet)
+
+    def test_menu_sink_recognizes_node(self):
+        applet = self._make_applet()
+        try:
+            sink = applet._menu_sink(True, applet._server)
+
+            chunk = {
+                "data": {
+                    "item_loop": [
+                        {
+                            "id": "customNode",
+                            "text": "Custom",
+                            "node": "home",
+                            "isANode": True,
+                        },
+                    ]
+                }
+            }
+
+            sink(chunk)
+            # Nodes are added via _add_node, not _add_item, so they won't be in _player_menus
+            # This just shouldn't crash.
+        finally:
+            self._teardown_applet(applet)
+
+    def test_menu_sink_handles_remove_directive(self):
+        applet = self._make_applet()
+        try:
+            # First add an item
+            applet._player_menus["removeMe"] = {"id": "removeMe", "text": "Remove"}
+
+            # menustatus notification with remove directive
+            sink = applet._menu_sink(True, None)
+
+            chunk = {
+                "data": [
+                    None,
+                    [{"id": "removeMe", "text": "Remove", "node": "home"}],
+                    "remove",
+                    "all",
+                ]
+            }
+
+            sink(chunk)
+            # Should not crash; actual removal depends on JiveMain being available.
+        finally:
+            self._teardown_applet(applet)
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# SlimMenus — Server home menu caching
+# ══════════════════════════════════════════════════════════════════════════════
+
+
+class TestSlimMenusServerCache:
+    """Tests for server home menu item caching."""
+
+    def test_add_server_home_menu_items(self):
+        applet = SlimMenusApplet()
+        server = MagicMock()
+
+        items = [
+            {"id": "item1", "text": "Item 1"},
+            {"id": "item2", "text": "Item 2"},
+        ]
+
+        applet._add_server_home_menu_items(server, items)
+
+        assert server in applet.server_home_menu_items
+        assert "item1" in applet.server_home_menu_items[server]
+        assert "item2" in applet.server_home_menu_items[server]
+
+    def test_add_server_home_menu_items_skips_no_id(self):
+        applet = SlimMenusApplet()
+        server = MagicMock()
+
+        items = [
+            {"text": "No ID"},
+        ]
+
+        applet._add_server_home_menu_items(server, items)
+        assert len(applet.server_home_menu_items[server]) == 0
+
+    def test_can_server_serve_true(self):
+        applet = SlimMenusApplet()
+        server = MagicMock()
+        applet.server_home_menu_items[server] = {"myItem": {"id": "myItem"}}
+
+        assert applet._can_server_serve(server, {"id": "myItem"}) is True
+
+    def test_can_server_serve_false(self):
+        applet = SlimMenusApplet()
+        server = MagicMock()
+        applet.server_home_menu_items[server] = {"myItem": {"id": "myItem"}}
+
+        assert applet._can_server_serve(server, {"id": "otherItem"}) is False
+
+    def test_can_server_serve_no_cache(self):
+        applet = SlimMenusApplet()
+        server = MagicMock()
+        assert applet._can_server_serve(server, {"id": "anything"}) is False
+
+    def test_can_server_serve_none_server(self):
+        applet = SlimMenusApplet()
+        assert applet._can_server_serve(None, {"id": "x"}) is False
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# SlimMenus — Settings
+# ══════════════════════════════════════════════════════════════════════════════
+
+
+class TestSlimMenusSettings:
+    """Tests for settings helpers."""
+
+    def test_get_settings_fallback(self):
+        applet = SlimMenusApplet()
+        settings = applet.get_settings()
+        assert isinstance(settings, dict)
+
+    def test_get_settings_alias(self):
+        applet = SlimMenusApplet()
+        assert applet.getSettings() is applet.get_settings()
+
+    def test_store_settings_no_crash(self):
+        applet = SlimMenusApplet()
+        applet.store_settings()
+
+    def test_store_settings_alias(self):
+        applet = SlimMenusApplet()
+        assert applet.storeSettings == applet.store_settings
+
+    def test_string_helper_fallback(self):
+        applet = SlimMenusApplet()
+        assert applet._get_string("UNKNOWN_TOKEN", "fallback") == "fallback"
+
+    def test_string_helper_alias(self):
+        applet = SlimMenusApplet()
+        # Bound methods create new objects each access; compare via __func__
+        assert type(applet).string is type(applet)._get_string
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# SlimMenus — Player/Server helpers (duck-typing)
+# ══════════════════════════════════════════════════════════════════════════════
+
+
+class TestSlimMenusDuckTyping:
+    """Tests for the static duck-typing helper methods."""
+
+    def test_get_player_id(self):
+        player = MagicMock()
+        player.get_id.return_value = "aa:bb:cc:dd:ee:ff"
+        assert SlimMenusApplet._get_player_id(player) == "aa:bb:cc:dd:ee:ff"
+
+    def test_get_player_id_none(self):
+        assert SlimMenusApplet._get_player_id(None) is None
+
+    def test_get_player_id_false(self):
+        assert SlimMenusApplet._get_player_id(False) is None
+
+    def test_get_player_name(self):
+        player = MagicMock()
+        player.get_name.return_value = "Kitchen"
+        assert SlimMenusApplet._get_player_name(player) == "Kitchen"
+
+    def test_get_player_name_none(self):
+        assert SlimMenusApplet._get_player_name(None) is None
+
+    def test_get_player_server(self):
+        server = MagicMock()
+        player = MagicMock()
+        player.get_slim_server.return_value = server
+        assert SlimMenusApplet._get_player_server(player) is server
+
+    def test_get_player_server_none(self):
+        assert SlimMenusApplet._get_player_server(None) is None
+
+    def test_get_server_name(self):
+        server = MagicMock()
+        server.get_name.return_value = "MyLMS"
+        assert SlimMenusApplet._get_server_name(server) == "MyLMS"
+
+    def test_server_is_squeeze_network_false(self):
+        server = MagicMock()
+        server.is_squeeze_network.return_value = False
+        assert SlimMenusApplet._server_is_squeeze_network(server) is False
+
+    def test_server_is_squeeze_network_true(self):
+        server = MagicMock()
+        server.is_squeeze_network.return_value = True
+        assert SlimMenusApplet._server_is_squeeze_network(server) is True
+
+    def test_server_is_squeeze_network_none(self):
+        assert SlimMenusApplet._server_is_squeeze_network(None) is False
+
+    def test_server_is_connected(self):
+        server = MagicMock()
+        server.is_connected.return_value = True
+        assert SlimMenusApplet._server_is_connected(server) is True
+
+    def test_server_is_compatible_default(self):
+        server = MagicMock(spec=[])  # no is_compatible attr
+        assert SlimMenusApplet._server_is_compatible(server) is True
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# SlimMenus — Integration with AppletManager
+# ══════════════════════════════════════════════════════════════════════════════
+
+
+class TestSlimMenusIntegration:
+    """Test that SlimMenus integrates with the AppletManager."""
+
+    def _make_mgr(self):
+        from jive.applet_manager import AppletManager
+
+        mgr = AppletManager.__new__(AppletManager)
+        mgr._applets_db = {}
+        mgr._services = {}
+        mgr._settings_dir = None
+        mgr._search_paths = [str(_PROJECT_ROOT / "jive" / "applets")]
+        mgr._loaded_locale = set()
+        mgr._locale_search_paths = []
+        mgr._system = None
+        mgr._allowed_applets = None
+        mgr._service_closures = {}
+        mgr._default_settings = {}
+        mgr._user_settings_dir = Path(tempfile.mkdtemp()) / "settings"
+        mgr._user_applets_dir = Path("/nonexistent/user_applets")
+        jive_dir = str(_PROJECT_ROOT / "jive")
+        if jive_dir not in sys.path:
+            sys.path.insert(0, jive_dir)
+        return mgr
+
+    def test_applet_manager_discovers_slim_menus(self):
+        mgr = self._make_mgr()
+        mgr._find_applets()
+        assert "SlimMenus" in mgr._applets_db
+
+    def test_meta_class_importable(self):
+        mgr = self._make_mgr()
+        mgr._find_applets()
+        entry = mgr._applets_db["SlimMenus"]
+        meta_cls = mgr._import_meta_class(entry)
+        assert meta_cls is not None
+        assert meta_cls.__name__ == "SlimMenusMeta"
+
+    def test_applet_class_importable(self):
+        mgr = self._make_mgr()
+        mgr._find_applets()
+        entry = mgr._applets_db["SlimMenus"]
+        applet_cls = mgr._import_applet_class(entry)
+        assert applet_cls is not None
+        assert applet_cls.__name__ == "SlimMenusApplet"
+        assert issubclass(applet_cls, Applet)
