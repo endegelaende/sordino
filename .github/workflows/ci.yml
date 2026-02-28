@@ -1,0 +1,91 @@
+# ──────────────────────────────────────────────────────────────────────────────
+# Jivelite-py — Continuous Integration
+#
+# Runs the full test suite on every push and pull request.
+# Matrix: Python 3.10 – 3.13 × Ubuntu + Windows
+# ──────────────────────────────────────────────────────────────────────────────
+
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: "Python ${{ matrix.python-version }} / ${{ matrix.os }}"
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+        python-version: ["3.10", "3.11", "3.12", "3.13"]
+
+    steps:
+      # ── Checkout ───────────────────────────────────────────────────
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # ── Python setup ───────────────────────────────────────────────
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      # ── System dependencies (Linux: SDL for pygame) ────────────────
+      - name: Install SDL2 (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq libsdl2-dev libsdl2-image-dev libsdl2-mixer-dev libsdl2-ttf-dev
+
+      # ── Python dependencies ────────────────────────────────────────
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip setuptools wheel
+          python -m pip install pygame>=2.5.0 pytest>=7.0 pytest-cov>=4.0
+
+      # ── Run tests ──────────────────────────────────────────────────
+      - name: Run tests
+        env:
+          # pygame needs a video driver even in headless mode
+          SDL_VIDEODRIVER: dummy
+          SDL_AUDIODRIVER: dummy
+        run: |
+          python -m pytest --tb=short -q --co -q 2>&1 | tail -1 || true
+          python -m pytest --tb=short -v --junitxml=results.xml
+
+      # ── Upload test results ────────────────────────────────────────
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results-${{ matrix.os }}-py${{ matrix.python-version }}
+          path: results.xml
+          retention-days: 14
+
+  # ────────────────────────────────────────────────────────────────────────
+  # Summary job — single check for branch protection rules
+  # ────────────────────────────────────────────────────────────────────────
+  all-tests-pass:
+    name: All tests pass
+    needs: test
+    runs-on: ubuntu-latest
+    if: always()
+    steps:
+      - name: Check matrix results
+        run: |
+          if [ "${{ needs.test.result }}" != "success" ]; then
+            echo "::error::Some test jobs failed or were cancelled."
+            exit 1
+          fi
+          echo "All test matrix jobs passed."
