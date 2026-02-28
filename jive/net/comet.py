@@ -188,6 +188,7 @@ class Comet:
     """
 
     __slots__ = (
+        "__weakref__",
         "jnt",
         "name",
         "uri",

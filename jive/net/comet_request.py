@@ -25,6 +25,12 @@ CometRequest:
 * The response sink mode is determined dynamically based on the
   ``Transfer-Encoding`` response header.
 
+For streaming (chunked) connections, the server may send multiple
+JSON arrays concatenated within a single HTTP chunk, or a single
+JSON array may span multiple chunks.  This class uses a persistent
+decode buffer and ``json.JSONDecoder.raw_decode()`` to correctly
+handle both cases.
+
 Convention from the Lua original: methods prefixed with ``t_`` are
 conceptually "thread-side" operations.  In this Python port everything
 runs cooperatively in the main event loop, but we preserve the naming
@@ -55,6 +61,7 @@ License: BSD-3-Clause
 
 from __future__ import annotations
 
+import json as _json
 from typing import (
     Any,
     Callable,
@@ -105,6 +112,10 @@ def _get_body_source(data: Any) -> Callable[[], Optional[str]]:
     return _source
 
 
+# Reusable JSON decoder for raw_decode() — avoids creating one per call
+_JSON_DECODER = _json.JSONDecoder()
+
+
 class CometRequest(RequestHttp):
     """
     A Comet/Bayeux HTTP request over POST.
@@ -115,6 +126,17 @@ class CometRequest(RequestHttp):
     Automatically encodes the request body as JSON (Bayeux messages)
     and decodes the JSON response body.  Supports both concatenated
     and chunked response modes for Comet streaming.
+
+    For streaming (chunked) connections, the server may deliver:
+
+    * Multiple complete JSON arrays in one HTTP chunk (concatenated),
+      e.g. ``[{...}][{...}]``
+    * A single JSON array split across multiple HTTP chunks (partial),
+      e.g. chunk 1 = ``[{"channel":"/meta/co``, chunk 2 = ``nnect"...}]``
+
+    We handle both cases with a persistent ``_chunk_buffer`` and
+    ``json.JSONDecoder.raw_decode()`` which parses one JSON value
+    from the start of a string and reports where it ended.
 
     Parameters
     ----------
@@ -142,7 +164,7 @@ class CometRequest(RequestHttp):
         class.
     """
 
-    __slots__ = ()
+    __slots__ = ("_chunk_buffer",)
 
     def __init__(
         self,
@@ -161,6 +183,10 @@ class CometRequest(RequestHttp):
 
         # Set the body source to encode our data as JSON
         options["t_body_source"] = _get_body_source(data)
+
+        # Buffer for accumulating partial JSON across HTTP chunks.
+        # Only used in ``jive-by-chunk`` (streaming) mode.
+        self._chunk_buffer: str = ""
 
         # Initialize superclass as a POST request
         super().__init__(
@@ -206,6 +232,12 @@ class CometRequest(RequestHttp):
         response sink.  Only sends data back for HTTP 200 responses;
         for other status codes, the error is forwarded to the sink.
 
+        For chunked (streaming) responses, uses ``raw_decode()`` with
+        a persistent ``_chunk_buffer`` to handle:
+
+        * Concatenated JSON values in one chunk: ``[{...}][{...}]``
+        * Partial JSON split across chunks: ``[{"chann`` + ``el":...}]``
+
         Parameters
         ----------
         data : str, bytes, or None
@@ -221,18 +253,64 @@ class CometRequest(RequestHttp):
         # Only send data back for 200 OK
         code, err = self.t_get_response_status()
 
-        if code == 200:
-            if data is not None and data != "" and data != b"":
-                try:
-                    decoded = json_decode(data)
-                except Exception as exc:
-                    log.error("Comet JSON decode error: %s", exc)
-                    sink(None, str(exc), self)
-                    return
-
-                sink(decoded, None, self)
-        else:
+        if code != 200:
             sink(None, err, self)
+            return
+
+        if data is None or data == "" or data == b"":
+            # End-of-stream or empty chunk — flush any remaining buffer
+            if self._chunk_buffer:
+                self._flush_buffer(sink)
+            return
+
+        # Convert bytes to str
+        if isinstance(data, bytes):
+            data = data.decode("utf-8", errors="replace")
+
+        # Append to the decode buffer
+        self._chunk_buffer += data
+
+        # Extract all complete JSON values from the buffer
+        self._flush_buffer(sink)
+
+    def _flush_buffer(self, sink: Callable[..., Any]) -> None:
+        """
+        Extract and dispatch all complete JSON values from
+        ``_chunk_buffer`` using ``raw_decode()``.
+
+        After this call, ``_chunk_buffer`` contains only the
+        un-parseable remainder (partial JSON or whitespace).
+        """
+        buf = self._chunk_buffer
+
+        while buf:
+            # Skip leading whitespace
+            stripped = buf.lstrip()
+            if not stripped:
+                buf = ""
+                break
+
+            # Update buf to the stripped version so raw_decode
+            # indices are correct relative to buf
+            buf = stripped
+
+            try:
+                decoded, end_idx = _JSON_DECODER.raw_decode(buf)
+            except _json.JSONDecodeError:
+                # Incomplete JSON — keep the remainder for the next
+                # chunk to complete it
+                break
+
+            # Dispatch the decoded value to the sink
+            try:
+                sink(decoded, None, self)
+            except Exception as exc:
+                log.error("Error in Comet sink callback: %s", exc)
+
+            # Advance past the consumed value
+            buf = buf[end_idx:]
+
+        self._chunk_buffer = buf
 
     # ------------------------------------------------------------------
     # Representation

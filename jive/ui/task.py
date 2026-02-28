@@ -143,6 +143,7 @@ class Task:
         "state",
         "_args",
         "_generator",
+        "_is_running",
         # Linked-list 'next' for compatibility with iteration patterns
         # (we use Python lists internally, but expose .next for parity)
         "next",
@@ -176,6 +177,7 @@ class Task:
         self.state: str = STATE_SUSPENDED
         self._args: Tuple[Any, ...] = ()
         self._generator: Optional[Generator[Any, Any, Any]] = None
+        self._is_running: bool = False
         self.next: Optional[Task] = None  # Lua compat — not actively used
 
     # ------------------------------------------------------------------
@@ -188,11 +190,23 @@ class Task:
 
         Returns ``True`` if the task is still active (will run again
         next tick), ``False`` if the task has completed or errored.
+
+        Re-entrant calls (e.g. when a callback triggered during resume
+        causes the same task to be resumed again) are silently skipped
+        and return ``True`` so the task stays queued for the next cycle.
         """
         global _task_running
 
+        # Guard against re-entrant resume — this can happen when a
+        # sink callback (fired during this resume) triggers another
+        # fetch() → add_task() → resume() on the same generator.
+        if self._is_running:
+            log.debug("task %s: skipping re-entrant resume", self.name)
+            return True
+
         log.debug("task: %s", self.name)
 
+        self._is_running = True
         _task_running = self
 
         try:
@@ -262,6 +276,7 @@ class Task:
             return False
 
         finally:
+            self._is_running = False
             _task_running = None
 
     # ------------------------------------------------------------------

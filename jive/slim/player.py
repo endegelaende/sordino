@@ -154,7 +154,9 @@ def _get_ticks() -> int:
         from jive.ui.framework import framework as fw
 
         if fw is not None:
-            return fw.get_ticks()
+            ticks = fw.get_ticks()
+            if ticks > 0:
+                return ticks
     except (ImportError, AttributeError):
         pass
     return int(time.monotonic() * 1000)

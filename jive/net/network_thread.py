@@ -206,7 +206,9 @@ class NetworkThread:
             from jive.ui.framework import framework
 
             if framework is not None:
-                return framework.get_ticks()
+                ticks = framework.get_ticks()
+                if ticks > 0:
+                    return ticks
         except (ImportError, AttributeError):
             pass
         return time.time() * 1000.0
@@ -392,28 +394,44 @@ class NetworkThread:
         if not self._t_read_socks and not self._t_write_socks:
             return
 
-        # Filter out any None or closed sockets before select
+        # Filter out any None or closed sockets before select.
+        # On Windows, a closed socket may return fileno() == -1 rather
+        # than raising an exception, so we check for that explicitly.
+        stale_read: List[Any] = []
         read_socks = []
         for s in self._t_read_socks:
-            if s is not None:
-                try:
-                    # Verify socket is still valid
-                    if hasattr(s, "fileno"):
-                        s.fileno()
+            if s is None:
+                stale_read.append(s)
+                continue
+            try:
+                fd = s.fileno() if hasattr(s, "fileno") else 0
+                if fd < 0:
+                    stale_read.append(s)
+                else:
                     read_socks.append(s)
-                except (OSError, ValueError):
-                    # Socket was closed — schedule removal
-                    pass
+            except (OSError, ValueError):
+                stale_read.append(s)
 
+        stale_write: List[Any] = []
         write_socks = []
         for s in self._t_write_socks:
-            if s is not None:
-                try:
-                    if hasattr(s, "fileno"):
-                        s.fileno()
+            if s is None:
+                stale_write.append(s)
+                continue
+            try:
+                fd = s.fileno() if hasattr(s, "fileno") else 0
+                if fd < 0:
+                    stale_write.append(s)
+                else:
                     write_socks.append(s)
-                except (OSError, ValueError):
-                    pass
+            except (OSError, ValueError):
+                stale_write.append(s)
+
+        # Remove stale sockets from our tracking lists
+        for s in stale_read:
+            self.t_remove_read(s)
+        for s in stale_write:
+            self.t_remove_write(s)
 
         try:
             r, w, e = select.select(

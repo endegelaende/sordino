@@ -134,6 +134,7 @@ class SocketHttp(SocketTcp):
         "_http_recv_requests",
         "_http_recv_request",
         "_http_protocol",
+        "_recv_body_buffer",
         "cached_ip",
     )
 
@@ -163,6 +164,9 @@ class SocketHttp(SocketTcp):
 
         # HTTP protocol version
         self._http_protocol: str = "1.1"
+
+        # Buffer for leftover data between header and body parsing
+        self._recv_body_buffer: bytes = b""
 
         # Cached IP address (for DNS bypass)
         self.cached_ip: Optional[str] = None

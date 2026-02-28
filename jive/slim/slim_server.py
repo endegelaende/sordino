@@ -131,7 +131,9 @@ def _get_ticks() -> int:
         from jive.ui.framework import framework as fw
 
         if fw is not None:
-            return fw.get_ticks()
+            ticks = fw.get_ticks()
+            if ticks > 0:
+                return ticks
     except (ImportError, AttributeError):
         pass
     return int(time.monotonic() * 1000)
@@ -258,6 +260,12 @@ class SlimServer:
         # Subscribe to jnt notifications
         if self.jnt:
             self.jnt.subscribe(self)
+
+        # Set up Comet subscriptions (serverstatus etc.) early — matching
+        # the Lua original which subscribes in __init.  The subscriptions
+        # are queued as "pending" and sent automatically when the Comet
+        # connection is established.
+        self._setup_subscriptions()
 
     # ------------------------------------------------------------------
     # Comet property (lazy / injectable)
