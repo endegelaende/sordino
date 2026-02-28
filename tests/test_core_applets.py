@@ -3750,3 +3750,917 @@ class TestSlimMenusIntegration:
         assert applet_cls is not None
         assert applet_cls.__name__ == "SlimMenusApplet"
         assert issubclass(applet_cls, Applet)
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# ChooseMusicSource — Meta
+# ══════════════════════════════════════════════════════════════════════════════
+
+from jive.applets.ChooseMusicSource.ChooseMusicSourceApplet import (
+    ChooseMusicSourceApplet,
+    _HeadlessMenu,
+    _HeadlessPopup,
+    _StubServer,
+)
+from jive.applets.ChooseMusicSource.ChooseMusicSourceMeta import (
+    ChooseMusicSourceMeta,
+)
+
+
+class TestChooseMusicSourceMeta:
+    """Tests for ChooseMusicSourceMeta."""
+
+    def test_jive_version(self):
+        meta = ChooseMusicSourceMeta()
+        assert meta.jive_version() == (1, 1)
+
+    def test_jive_version_alias(self):
+        meta = ChooseMusicSourceMeta()
+        assert meta.jiveVersion() == (1, 1)
+
+    def test_default_settings(self):
+        meta = ChooseMusicSourceMeta()
+        settings = meta.default_settings()
+        assert isinstance(settings, dict)
+        assert "poll" in settings
+        assert "255.255.255.255" in settings["poll"]
+
+    def test_default_settings_alias(self):
+        meta = ChooseMusicSourceMeta()
+        assert meta.defaultSettings() == meta.default_settings()
+
+    def test_register_applet_services(self):
+        meta = ChooseMusicSourceMeta()
+        registered = []
+        meta.register_service = lambda name: registered.append(name)
+        meta.register_applet()
+
+        expected = {
+            "selectCompatibleMusicSource",
+            "selectMusicSource",
+            "connectPlayerToServer",
+            "hideConnectingToServer",
+            "showConnectToServer",
+        }
+        assert set(registered) == expected
+
+    def test_register_applet_alias(self):
+        meta = ChooseMusicSourceMeta()
+        registered = []
+        meta.register_service = lambda name: registered.append(name)
+        meta.registerApplet()
+        assert len(registered) == 5
+
+    def test_is_applet_meta_subclass(self):
+        meta = ChooseMusicSourceMeta()
+        assert isinstance(meta, AppletMeta)
+
+    def test_menu_item_builder(self):
+        meta = ChooseMusicSourceMeta()
+        item = meta.menu_item(
+            "testId", "networkSettings", "REMOTE_LIBRARIES", weight=11
+        )
+        assert item["id"] == "testId"
+        assert item["node"] == "networkSettings"
+        assert item["weight"] == 11
+        assert item["sound"] == "WINDOWSHOW"
+        assert item["iconStyle"] == "hm_testId"
+        assert item["text"] == "REMOTE_LIBRARIES"
+
+    def test_menu_item_alias(self):
+        meta = ChooseMusicSourceMeta()
+        assert type(meta).menuItem is type(meta).menu_item
+
+    def test_menu_item_with_callback(self):
+        meta = ChooseMusicSourceMeta()
+        cb = lambda applet: None
+        item = meta.menu_item("x", "home", "T", callback=cb)
+        assert item["callback"] is cb
+
+    def test_configure_applet_no_crash_without_manager(self):
+        meta = ChooseMusicSourceMeta()
+        meta._get_applet_manager = lambda: None
+        meta._get_jive_main = lambda: None
+        meta.configure_applet()  # Should not raise
+
+    def test_configure_applet_alias(self):
+        meta = ChooseMusicSourceMeta()
+        meta._get_applet_manager = lambda: None
+        meta._get_jive_main = lambda: None
+        meta.configureApplet()  # Should not raise
+
+    def test_get_settings_returns_defaults_without_manager(self):
+        meta = ChooseMusicSourceMeta()
+        meta._get_applet_manager = lambda: None
+        settings = meta.get_settings()
+        assert "poll" in settings
+        assert "255.255.255.255" in settings["poll"]
+
+    def test_get_settings_alias(self):
+        meta = ChooseMusicSourceMeta()
+        meta._get_applet_manager = lambda: None
+        assert meta.getSettings() == meta.get_settings()
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# ChooseMusicSource — Applet construction
+# ══════════════════════════════════════════════════════════════════════════════
+
+
+class TestChooseMusicSourceAppletConstruction:
+    """Tests for applet construction and initial state."""
+
+    def test_construction(self):
+        applet = ChooseMusicSourceApplet()
+        assert applet is not None
+
+    def test_initial_server_list_empty(self):
+        applet = ChooseMusicSourceApplet()
+        assert applet.server_list == {}
+
+    def test_initial_server_menu_none(self):
+        applet = ChooseMusicSourceApplet()
+        assert applet.server_menu is None
+
+    def test_initial_connecting_popup_none(self):
+        applet = ChooseMusicSourceApplet()
+        assert applet.connecting_popup is None
+
+    def test_initial_wait_for_connect_none(self):
+        applet = ChooseMusicSourceApplet()
+        assert applet.wait_for_connect is None
+
+    def test_initial_offer_compatible_false(self):
+        applet = ChooseMusicSourceApplet()
+        assert applet.offer_compatible_sources_only is False
+
+    def test_repr(self):
+        applet = ChooseMusicSourceApplet()
+        r = repr(applet)
+        assert "ChooseMusicSourceApplet" in r
+        assert "servers=0" in r
+        assert "connecting=False" in r
+
+    def test_free_returns_true(self):
+        applet = ChooseMusicSourceApplet()
+        assert applet.free() is True
+
+    def test_free_idempotent(self):
+        applet = ChooseMusicSourceApplet()
+        assert applet.free() is True
+        assert applet.free() is True
+
+    def test_init_returns_self(self):
+        applet = ChooseMusicSourceApplet()
+        result = applet.init()
+        assert result is applet
+
+    def test_is_applet_subclass(self):
+        applet = ChooseMusicSourceApplet()
+        assert isinstance(applet, Applet)
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# ChooseMusicSource — Services
+# ══════════════════════════════════════════════════════════════════════════════
+
+
+class TestChooseMusicSourceServices:
+    """Tests for the public service methods."""
+
+    def test_hide_connecting_to_server_no_popup(self):
+        applet = ChooseMusicSourceApplet()
+        applet.hideConnectingToServer()  # Should not raise
+
+    def test_hide_connecting_alias(self):
+        assert (
+            ChooseMusicSourceApplet.hide_connecting_to_server
+            is ChooseMusicSourceApplet.hideConnectingToServer
+        )
+
+    def test_hide_connecting_dismisses_popup(self):
+        applet = ChooseMusicSourceApplet()
+        popup = _HeadlessPopup("TestServer")
+        applet.connecting_popup = popup
+        applet.hideConnectingToServer()
+        assert applet.connecting_popup is None
+
+    def test_show_connect_to_server_no_crash(self):
+        applet = ChooseMusicSourceApplet()
+        applet.showConnectToServer()  # Should not raise (no player/server)
+
+    def test_show_connect_alias(self):
+        assert (
+            ChooseMusicSourceApplet.show_connect_to_server
+            is ChooseMusicSourceApplet.showConnectToServer
+        )
+
+    def test_select_music_source_alias(self):
+        assert (
+            ChooseMusicSourceApplet.select_music_source
+            is ChooseMusicSourceApplet.selectMusicSource
+        )
+
+    def test_select_compatible_alias(self):
+        assert (
+            ChooseMusicSourceApplet.select_compatible_music_source
+            is ChooseMusicSourceApplet.selectCompatibleMusicSource
+        )
+
+    def test_connect_player_alias(self):
+        assert (
+            ChooseMusicSourceApplet.connect_player_to_server
+            is ChooseMusicSourceApplet.connectPlayerToServer
+        )
+
+    def test_select_server_alias(self):
+        assert (
+            ChooseMusicSourceApplet.select_server
+            is ChooseMusicSourceApplet.selectServer
+        )
+
+    def test_select_compatible_sets_flag(self):
+        applet = ChooseMusicSourceApplet()
+        # Patch to avoid actual UI
+        applet._show_music_source_list = lambda *a: None
+        applet.selectCompatibleMusicSource()
+        assert applet.offer_compatible_sources_only is True
+
+    def test_select_music_source_sets_callback(self):
+        applet = ChooseMusicSourceApplet()
+        applet._show_music_source_list = lambda *a: None
+        called = []
+        applet.selectMusicSource(player_connected_callback=lambda s: called.append(s))
+        assert applet.player_connected_callback is not None
+
+    def test_select_music_source_default_callback(self):
+        applet = ChooseMusicSourceApplet()
+        applet._show_music_source_list = lambda *a: None
+        applet.selectMusicSource()
+        assert applet.player_connected_callback is not None
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# ChooseMusicSource — Notification handlers
+# ══════════════════════════════════════════════════════════════════════════════
+
+
+class TestChooseMusicSourceNotifications:
+    """Tests for the notification handler methods."""
+
+    def test_notify_server_new_adds_item(self):
+        applet = ChooseMusicSourceApplet()
+        applet.server_menu = _HeadlessMenu()
+        server = MagicMock()
+        server.get_ip_port.return_value = "192.168.1.10:9000"
+        server.get_name.return_value = "TestLMS"
+        server.is_squeeze_network.return_value = False
+        server.is_compatible.return_value = True
+
+        applet.notify_serverNew(server)
+        assert "192.168.1.10:9000" in applet.server_list
+
+    def test_notify_server_delete_removes_item(self):
+        applet = ChooseMusicSourceApplet()
+        applet.server_menu = _HeadlessMenu()
+        server = MagicMock()
+        server.get_ip_port.return_value = "192.168.1.10:9000"
+
+        applet.server_list["192.168.1.10:9000"] = {"server": server, "text": "TestLMS"}
+        applet.notify_serverDelete(server)
+        assert "192.168.1.10:9000" not in applet.server_list
+
+    def test_notify_server_connected_no_wait(self):
+        applet = ChooseMusicSourceApplet()
+        server = MagicMock()
+        # No wait_for_connect, should not crash
+        applet.notify_serverConnected(server)
+
+    def test_notify_server_connected_wrong_server(self):
+        applet = ChooseMusicSourceApplet()
+        server1 = MagicMock()
+        server2 = MagicMock()
+        applet.wait_for_connect = {"player": MagicMock(), "server": server1}
+        applet.notify_serverConnected(server2)
+        # Should not cancel since servers don't match
+        assert applet.wait_for_connect is not None
+
+    def test_notify_player_current_none_cancels(self):
+        applet = ChooseMusicSourceApplet()
+        applet.wait_for_connect = {"player": MagicMock(), "server": MagicMock()}
+        applet.notify_playerCurrent(None)
+        assert applet.wait_for_connect is None
+
+    def test_notify_player_new_no_crash(self):
+        applet = ChooseMusicSourceApplet()
+        player = MagicMock()
+        applet.notify_playerNew(player)  # Should not raise
+
+    def test_notify_player_delete_no_crash(self):
+        applet = ChooseMusicSourceApplet()
+        player = MagicMock()
+        applet.notify_playerDelete(player)  # Should not raise
+
+    def test_notify_server_auth_failed_no_crash(self):
+        applet = ChooseMusicSourceApplet()
+        server = MagicMock()
+        applet.notify_serverAuthFailed(server, 1)  # Should not raise
+
+    def test_notification_snake_case_aliases(self):
+        assert (
+            ChooseMusicSourceApplet.notify_server_new
+            is ChooseMusicSourceApplet.notify_serverNew
+        )
+        assert (
+            ChooseMusicSourceApplet.notify_server_delete
+            is ChooseMusicSourceApplet.notify_serverDelete
+        )
+        assert (
+            ChooseMusicSourceApplet.notify_server_connected
+            is ChooseMusicSourceApplet.notify_serverConnected
+        )
+        assert (
+            ChooseMusicSourceApplet.notify_player_new
+            is ChooseMusicSourceApplet.notify_playerNew
+        )
+        assert (
+            ChooseMusicSourceApplet.notify_player_delete
+            is ChooseMusicSourceApplet.notify_playerDelete
+        )
+        assert (
+            ChooseMusicSourceApplet.notify_player_current
+            is ChooseMusicSourceApplet.notify_playerCurrent
+        )
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# ChooseMusicSource — Server item management
+# ══════════════════════════════════════════════════════════════════════════════
+
+
+class TestChooseMusicSourceServerItems:
+    """Tests for server item add/remove logic."""
+
+    def _make_server(self, name="TestLMS", ip_port="192.168.1.10:9000"):
+        server = MagicMock()
+        server.get_ip_port.return_value = ip_port
+        server.getIpPort.return_value = ip_port
+        server.get_name.return_value = name
+        server.getName.return_value = name
+        server.is_squeeze_network.return_value = False
+        server.isSqueezeNetwork.return_value = False
+        server.is_compatible.return_value = True
+        server.isCompatible.return_value = True
+        server.is_password_protected.return_value = False
+        server.isPasswordProtected.return_value = False
+        return server
+
+    def test_add_server_item_by_server(self):
+        applet = ChooseMusicSourceApplet()
+        applet.server_menu = _HeadlessMenu()
+        server = self._make_server()
+
+        applet._add_server_item(server)
+        assert "192.168.1.10:9000" in applet.server_list
+        assert applet.server_list["192.168.1.10:9000"]["text"] == "TestLMS"
+
+    def test_add_server_item_by_address(self):
+        applet = ChooseMusicSourceApplet()
+        applet.server_menu = _HeadlessMenu()
+
+        applet._add_server_item(None, "192.168.1.42")
+        assert "192.168.1.42" in applet.server_list
+
+    def test_add_server_item_filters_sn(self):
+        applet = ChooseMusicSourceApplet()
+        applet.server_menu = _HeadlessMenu()
+        applet.offer_sn = False
+
+        server = self._make_server()
+        server.is_squeeze_network.return_value = True
+
+        applet._add_server_item(server)
+        assert len(applet.server_list) == 0
+
+    def test_add_server_item_filters_incompatible(self):
+        applet = ChooseMusicSourceApplet()
+        applet.server_menu = _HeadlessMenu()
+        applet.offer_compatible_sources_only = True
+
+        server = self._make_server()
+        server.is_compatible.return_value = False
+
+        applet._add_server_item(server)
+        assert len(applet.server_list) == 0
+
+    def test_add_server_item_filters_included_servers(self):
+        applet = ChooseMusicSourceApplet()
+        applet.server_menu = _HeadlessMenu()
+
+        server1 = self._make_server("LMS1", "10.0.0.1:9000")
+        server2 = self._make_server("LMS2", "10.0.0.2:9000")
+        applet.included_servers = [server1]
+
+        applet._add_server_item(server2)
+        assert len(applet.server_list) == 0
+
+        applet._add_server_item(server1)
+        assert "10.0.0.1:9000" in applet.server_list
+
+    def test_add_server_item_replaces_existing(self):
+        applet = ChooseMusicSourceApplet()
+        applet.server_menu = _HeadlessMenu()
+        server = self._make_server()
+
+        applet._add_server_item(server)
+        assert applet.server_list["192.168.1.10:9000"]["text"] == "TestLMS"
+
+        server.get_name.return_value = "UpdatedLMS"
+        applet._add_server_item(server)
+        assert applet.server_list["192.168.1.10:9000"]["text"] == "UpdatedLMS"
+
+    def test_add_server_item_marks_current_checked(self):
+        applet = ChooseMusicSourceApplet()
+        applet.server_menu = _HeadlessMenu()
+
+        server = self._make_server()
+        player = MagicMock()
+        player.get_slim_server.return_value = server
+
+        import jive.applets.ChooseMusicSource.ChooseMusicSourceApplet as _cms_mod
+
+        orig = _cms_mod._get_applet_manager
+        mock_mgr = MagicMock()
+        mock_mgr.call_service.return_value = player
+        _cms_mod._get_applet_manager = lambda: mock_mgr
+
+        try:
+            applet._add_server_item(server)
+            assert (
+                applet.server_list["192.168.1.10:9000"].get("style") == "item_checked"
+            )
+        finally:
+            _cms_mod._get_applet_manager = orig
+
+    def test_del_server_item(self):
+        applet = ChooseMusicSourceApplet()
+        applet.server_menu = _HeadlessMenu()
+        server = self._make_server()
+
+        applet._add_server_item(server)
+        assert "192.168.1.10:9000" in applet.server_list
+
+        applet._del_server_item(server)
+        assert "192.168.1.10:9000" not in applet.server_list
+
+    def test_del_server_item_alias(self):
+        assert (
+            ChooseMusicSourceApplet._delServerItem
+            is ChooseMusicSourceApplet._del_server_item
+        )
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# ChooseMusicSource — Server selection / connection
+# ══════════════════════════════════════════════════════════════════════════════
+
+
+class TestChooseMusicSourceSelection:
+    """Tests for server selection and connection flow."""
+
+    def _make_server(self, name="TestLMS"):
+        server = MagicMock()
+        server.get_ip_port.return_value = "192.168.1.10:9000"
+        server.get_name.return_value = name
+        server.getName.return_value = name
+        server.is_squeeze_network.return_value = False
+        server.isSqueezeNetwork.return_value = False
+        server.is_compatible.return_value = True
+        server.isCompatible.return_value = True
+        server.is_password_protected.return_value = False
+        server.isPasswordProtected.return_value = False
+        server.get_version.return_value = "7.999.999"
+        server.getVersion.return_value = "7.999.999"
+        # Prevent hideConnectingToServer from short-circuiting on upgrade check
+        server.upgrade_force = False
+        server.upgradeForce = False
+        return server
+
+    def _make_player(self, server=None):
+        player = MagicMock()
+        player.get_slim_server.return_value = server
+        player.getSlimServer.return_value = server
+        player.is_connected.return_value = True
+        player.isConnected.return_value = True
+        player.get_play_mode.return_value = "stop"
+        player.getPlayMode.return_value = "stop"
+        player.connect_to_server = MagicMock()
+        player.connectToServer = MagicMock()
+        return player
+
+    def test_select_server_already_connected(self):
+        applet = ChooseMusicSourceApplet()
+        server = self._make_server()
+        player = self._make_player(server)
+
+        called = []
+        applet.player_connected_callback = lambda s: called.append(s)
+
+        import jive.applets.ChooseMusicSource.ChooseMusicSourceApplet as _cms_mod
+
+        orig = _cms_mod._get_applet_manager
+        mock_mgr = MagicMock()
+        mock_mgr.call_service.return_value = player
+        _cms_mod._get_applet_manager = lambda: mock_mgr
+
+        try:
+            applet.selectServer(server)
+            assert called == [server]
+            assert applet.player_connected_callback is None
+        finally:
+            _cms_mod._get_applet_manager = orig
+
+    def test_select_server_incompatible_version(self):
+        applet = ChooseMusicSourceApplet()
+        server = self._make_server()
+        server.is_compatible.return_value = False
+        server.isCompatible.return_value = False
+
+        # Should call _server_version_error, not connect
+        version_errors = []
+        applet._server_version_error = lambda s: version_errors.append(s)
+        applet.selectServer(server)
+        assert version_errors == [server]
+
+    def test_connect_player_to_server(self):
+        applet = ChooseMusicSourceApplet()
+        server = self._make_server()
+        player = self._make_player()
+
+        applet.connectPlayerToServer(player, server)
+        assert applet.wait_for_connect is not None
+        assert applet.wait_for_connect["player"] is player
+        assert applet.wait_for_connect["server"] is server
+        player.connect_to_server.assert_called_once_with(server)
+
+    def test_cancel_select_server(self):
+        applet = ChooseMusicSourceApplet()
+        applet.wait_for_connect = {"player": MagicMock(), "server": MagicMock()}
+        applet.player_connected_callback = lambda s: None
+        applet.connecting_popup = _HeadlessPopup("Test")
+
+        applet._cancel_select_server()
+
+        assert applet.wait_for_connect is None
+        assert applet.player_connected_callback is None
+        assert applet.ignore_server_connected is True
+
+    def test_hide_connecting_runs_callback_on_match(self):
+        applet = ChooseMusicSourceApplet()
+        server = self._make_server()
+        player = self._make_player(server)
+        # Ensure get_slim_server returns the exact same server object
+        player.get_slim_server.return_value = server
+        player.getSlimServer.return_value = server
+
+        called = []
+        applet.player_connected_callback = lambda s: called.append(s)
+        applet.connecting_popup = _HeadlessPopup("Test")
+        applet.wait_for_connect = {"player": player, "server": server}
+
+        applet.hideConnectingToServer()
+
+        assert called == [server]
+        assert applet.connecting_popup is None
+        assert applet.wait_for_connect is None
+
+    def test_hide_connecting_logs_mismatch(self):
+        applet = ChooseMusicSourceApplet()
+        server1 = self._make_server("Server1")
+        server2 = self._make_server("Server2")
+        player = self._make_player(server2)
+        # Ensure get_slim_server returns server2 (not server1 which we wait for)
+        player.get_slim_server.return_value = server2
+        player.getSlimServer.return_value = server2
+
+        called = []
+        applet.player_connected_callback = lambda s: called.append(s)
+        applet.connecting_popup = _HeadlessPopup("Test")
+        applet.wait_for_connect = {"player": player, "server": server1}
+
+        applet.hideConnectingToServer()
+
+        # Callback should NOT be called because servers don't match
+        assert called == []
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# ChooseMusicSource — Poll list management
+# ══════════════════════════════════════════════════════════════════════════════
+
+
+class TestChooseMusicSourcePollList:
+    """Tests for poll list (remote server address) management."""
+
+    def test_add_remote_server(self):
+        applet = ChooseMusicSourceApplet()
+        applet._settings = {"poll": {"255.255.255.255": "255.255.255.255"}}
+        applet._add_remote_server("192.168.1.42")
+        assert "192.168.1.42" in applet._settings["poll"]
+        assert "255.255.255.255" in applet._settings["poll"]
+
+    def test_remove_remote_server(self):
+        applet = ChooseMusicSourceApplet()
+        applet._settings = {
+            "poll": {
+                "255.255.255.255": "255.255.255.255",
+                "192.168.1.42": "192.168.1.42",
+            }
+        }
+        applet._remove_remote_server("192.168.1.42")
+        assert "192.168.1.42" not in applet._settings["poll"]
+        assert "255.255.255.255" in applet._settings["poll"]
+
+    def test_get_poll_addresses(self):
+        applet = ChooseMusicSourceApplet()
+        applet._settings = {
+            "poll": {
+                "255.255.255.255": "255.255.255.255",
+                "10.0.0.1": "10.0.0.1",
+                "10.0.0.2": "10.0.0.2",
+            }
+        }
+        addrs = applet.get_poll_addresses()
+        assert "10.0.0.1" in addrs
+        assert "10.0.0.2" in addrs
+        assert "255.255.255.255" not in addrs
+
+    def test_get_poll_addresses_empty(self):
+        applet = ChooseMusicSourceApplet()
+        applet._settings = {"poll": {"255.255.255.255": "255.255.255.255"}}
+        assert applet.get_poll_addresses() == []
+
+    def test_remote_servers_window_no_crash(self):
+        applet = ChooseMusicSourceApplet()
+        applet._settings = {"poll": {"255.255.255.255": "255.255.255.255"}}
+        applet.remoteServersWindow()  # Should not raise
+
+    def test_remote_servers_alias(self):
+        assert (
+            ChooseMusicSourceApplet.remote_servers_window
+            is ChooseMusicSourceApplet.remoteServersWindow
+        )
+
+    def test_add_remote_server_alias(self):
+        assert (
+            ChooseMusicSourceApplet._addRemoteServer
+            is ChooseMusicSourceApplet._add_remote_server
+        )
+
+    def test_remove_remote_server_alias(self):
+        assert (
+            ChooseMusicSourceApplet._removeRemoteServer
+            is ChooseMusicSourceApplet._remove_remote_server
+        )
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# ChooseMusicSource — Settings
+# ══════════════════════════════════════════════════════════════════════════════
+
+
+class TestChooseMusicSourceSettings:
+    """Tests for settings helpers."""
+
+    def test_get_settings_fallback(self):
+        applet = ChooseMusicSourceApplet()
+        settings = applet.get_settings()
+        assert isinstance(settings, dict)
+        assert "poll" in settings
+
+    def test_get_settings_alias(self):
+        applet = ChooseMusicSourceApplet()
+        assert applet.getSettings() is applet.get_settings()
+
+    def test_store_settings_no_crash(self):
+        applet = ChooseMusicSourceApplet()
+        applet.store_settings()  # Should not raise
+
+    def test_store_settings_alias(self):
+        assert (
+            ChooseMusicSourceApplet.storeSettings
+            is ChooseMusicSourceApplet.store_settings
+        )
+
+    def test_string_helper_fallback(self):
+        applet = ChooseMusicSourceApplet()
+        assert applet._get_string("UNKNOWN_TOKEN", "fallback") == "fallback"
+
+    def test_string_helper_alias(self):
+        assert ChooseMusicSourceApplet.string is ChooseMusicSourceApplet._get_string
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# ChooseMusicSource — Server helpers (duck-typing)
+# ══════════════════════════════════════════════════════════════════════════════
+
+
+class TestChooseMusicSourceServerHelpers:
+    """Tests for the static server accessor helpers."""
+
+    def test_get_server_name(self):
+        server = MagicMock()
+        server.get_name.return_value = "MyLMS"
+        assert ChooseMusicSourceApplet._get_server_name(server) == "MyLMS"
+
+    def test_get_server_name_none(self):
+        assert ChooseMusicSourceApplet._get_server_name(None) == "Unknown"
+
+    def test_get_server_name_false(self):
+        assert ChooseMusicSourceApplet._get_server_name(False) == "Unknown"
+
+    def test_get_server_version(self):
+        server = MagicMock()
+        server.get_version.return_value = "7.999.999"
+        assert ChooseMusicSourceApplet._get_server_version(server) == "7.999.999"
+
+    def test_get_server_version_none(self):
+        assert ChooseMusicSourceApplet._get_server_version(None) is None
+
+    def test_get_server_version_from_state(self):
+        server = MagicMock(spec=[])
+        server.state = {"version": "8.0.0"}
+        assert ChooseMusicSourceApplet._get_server_version(server) == "8.0.0"
+
+    def test_get_server_ip_port(self):
+        server = MagicMock()
+        server.get_ip_port.return_value = "192.168.1.10:9000"
+        assert (
+            ChooseMusicSourceApplet._get_server_ip_port(server) == "192.168.1.10:9000"
+        )
+
+    def test_get_server_ip_port_none(self):
+        assert ChooseMusicSourceApplet._get_server_ip_port(None) is None
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# ChooseMusicSource — Headless stubs
+# ══════════════════════════════════════════════════════════════════════════════
+
+
+class TestChooseMusicSourceStubs:
+    """Tests for the headless stub classes."""
+
+    def test_headless_menu_add_remove(self):
+        menu = _HeadlessMenu()
+        item = {"id": "test", "text": "Test"}
+        menu.add_item(item)
+        assert len(menu) == 1
+        menu.remove_item(item)
+        assert len(menu) == 0
+
+    def test_headless_menu_aliases(self):
+        menu = _HeadlessMenu()
+        assert type(menu).addItem is type(menu).add_item
+        assert type(menu).removeItem is type(menu).remove_item
+        assert type(menu).setComparator is type(menu).set_comparator
+
+    def test_headless_menu_set_comparator_no_crash(self):
+        menu = _HeadlessMenu()
+        menu.set_comparator(None)  # Should not raise
+
+    def test_headless_popup_initial_state(self):
+        popup = _HeadlessPopup("TestServer")
+        assert popup.server_name == "TestServer"
+        assert popup.visible is True
+
+    def test_headless_popup_hide(self):
+        popup = _HeadlessPopup("TestServer")
+        popup.hide()
+        assert popup.visible is False
+
+    def test_headless_popup_repr(self):
+        popup = _HeadlessPopup("TestServer")
+        r = repr(popup)
+        assert "TestServer" in r
+        assert "visible=True" in r
+
+    def test_stub_server_basic(self):
+        server = _StubServer("192.168.1.42")
+        assert server.get_name() == "192.168.1.42"
+        assert server.get_ip_port() == "192.168.1.42:9000"
+        assert server.is_compatible() is True
+        assert server.is_squeeze_network() is False
+        assert server.is_password_protected() is False
+        assert server.is_connected() is False
+
+    def test_stub_server_aliases(self):
+        server = _StubServer("test")
+        assert server.getName() == server.get_name()
+        assert server.getIpPort() == server.get_ip_port()
+        assert server.isCompatible() == server.is_compatible()
+        assert server.isSqueezeNetwork() == server.is_squeeze_network()
+
+    def test_stub_server_update_init(self):
+        server = _StubServer("test")
+        server.update_init({"ip": "10.0.0.1"}, 8080)
+        assert server.ip == "10.0.0.1"
+        assert server.port == 8080
+
+    def test_stub_server_repr(self):
+        server = _StubServer("192.168.1.42")
+        assert "192.168.1.42" in repr(server)
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# ChooseMusicSource — Update server list
+# ══════════════════════════════════════════════════════════════════════════════
+
+
+class TestChooseMusicSourceUpdateServerList:
+    """Tests for _update_server_list."""
+
+    def test_update_marks_current_checked(self):
+        applet = ChooseMusicSourceApplet()
+        applet.server_menu = _HeadlessMenu()
+
+        server1 = MagicMock()
+        server1.get_ip_port.return_value = "10.0.0.1:9000"
+        server1.get_name.return_value = "LMS1"
+        server1.is_squeeze_network.return_value = False
+
+        server2 = MagicMock()
+        server2.get_ip_port.return_value = "10.0.0.2:9000"
+        server2.get_name.return_value = "LMS2"
+        server2.is_squeeze_network.return_value = False
+
+        applet.server_list = {
+            "10.0.0.1:9000": {"server": server1, "text": "LMS1"},
+            "10.0.0.2:9000": {"server": server2, "text": "LMS2"},
+        }
+
+        player = MagicMock()
+        player.get_slim_server.return_value = server1
+        player_server_ip = "10.0.0.1:9000"
+        player.get_slim_server.return_value.get_ip_port.return_value = player_server_ip
+
+        applet._update_server_list(player)
+
+        assert applet.server_list["10.0.0.1:9000"].get("style") == "item_checked"
+        assert "style" not in applet.server_list["10.0.0.2:9000"]
+
+    def test_update_empty_server_list_no_crash(self):
+        applet = ChooseMusicSourceApplet()
+        applet._update_server_list(MagicMock())  # Should not raise
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# ChooseMusicSource — Integration with AppletManager
+# ══════════════════════════════════════════════════════════════════════════════
+
+
+class TestChooseMusicSourceIntegration:
+    """Test that ChooseMusicSource integrates with the AppletManager."""
+
+    def _make_mgr(self):
+        from jive.applet_manager import AppletManager
+
+        mgr = AppletManager.__new__(AppletManager)
+        mgr._applets_db = {}
+        mgr._services = {}
+        mgr._settings_dir = None
+        mgr._search_paths = [str(_PROJECT_ROOT / "jive" / "applets")]
+        mgr._loaded_locale = set()
+        mgr._locale_search_paths = []
+        mgr._system = None
+        mgr._allowed_applets = None
+        mgr._service_closures = {}
+        mgr._default_settings = {}
+        mgr._user_settings_dir = Path(tempfile.mkdtemp()) / "settings"
+        mgr._user_applets_dir = Path("/nonexistent/user_applets")
+        jive_dir = str(_PROJECT_ROOT / "jive")
+        if jive_dir not in sys.path:
+            sys.path.insert(0, jive_dir)
+        return mgr
+
+    def test_applet_manager_discovers_choose_music_source(self):
+        mgr = self._make_mgr()
+        mgr._find_applets()
+        assert "ChooseMusicSource" in mgr._applets_db
+
+    def test_meta_class_importable(self):
+        mgr = self._make_mgr()
+        mgr._find_applets()
+        entry = mgr._applets_db["ChooseMusicSource"]
+        meta_cls = mgr._import_meta_class(entry)
+        assert meta_cls is not None
+        assert meta_cls.__name__ == "ChooseMusicSourceMeta"
+
+    def test_applet_class_importable(self):
+        mgr = self._make_mgr()
+        mgr._find_applets()
+        entry = mgr._applets_db["ChooseMusicSource"]
+        applet_cls = mgr._import_applet_class(entry)
+        assert applet_cls is not None
+        assert applet_cls.__name__ == "ChooseMusicSourceApplet"
+        assert issubclass(applet_cls, Applet)

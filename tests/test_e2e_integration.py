@@ -62,6 +62,7 @@ _APPLETS_DIR = _PROJECT_ROOT / "jive" / "applets"
 # All expected applet names (PascalCase, matching directory names)
 _ALL_APPLET_NAMES = frozenset(
     {
+        "ChooseMusicSource",
         "JogglerSkin",
         "NowPlaying",
         "QVGAbaseSkin",
