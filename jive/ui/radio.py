@@ -96,6 +96,8 @@ class RadioGroup(Widget):
         btn2 = RadioButton("radio", group, closure=...)
     """
 
+    __slots__ = ("selected",)
+
     def __init__(self) -> None:
         # Widget base class requires a style string.  RadioGroup uses an
         # empty string because it is never rendered.
@@ -190,6 +192,8 @@ class RadioButton(Icon):
         If ``True``, this button is immediately selected in *group*
         (default ``False``).
     """
+
+    __slots__ = ("group", "closure")
 
     def __init__(
         self,
@@ -290,6 +294,12 @@ class RadioButton(Icon):
         Called by :class:`RadioGroup` to update this button's visual
         state and (when becoming selected) fire the closure.
 
+        The closure is called as ``closure(radio_button)`` (matching the
+        Lua original).  However, many callers define closures that accept
+        zero arguments — in Lua extra arguments are silently ignored.
+        We replicate that tolerance here: if calling with ``self`` raises
+        a :class:`TypeError`, we retry without arguments.
+
         Parameters
         ----------
         selected : bool
@@ -300,7 +310,19 @@ class RadioButton(Icon):
         if selected:
             self.img_style_name = "img_on"
             if self.closure is not None:
-                self.closure(self)
+                try:
+                    self.closure(self)
+                except TypeError:
+                    # Lua silently ignores extra arguments — many closures
+                    # in the codebase (SelectSkin, SetupWallpaper, etc.)
+                    # don't accept the RadioButton argument.
+                    try:
+                        self.closure()
+                    except TypeError:
+                        log.warning(
+                            "RadioButton closure %r failed with and without args",
+                            self.closure,
+                        )
         else:
             self.img_style_name = "img_off"
 

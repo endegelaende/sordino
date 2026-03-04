@@ -1,0 +1,65 @@
+#
+# The two letter codes are defined by ISO 639-1
+# http://en.wikipedia.org/wiki/List_of_ISO_639_codes
+
+QVGALANDSCAPE_SKIN
+# SLT: QVGA refers to the "quarter VGA" resolution of the display
+	CS	QVGA skin krajiny
+	DA	QVGA-tema, liggende
+	DE	QVGA-Querformat-Skin
+	EN	QVGA Landscape Skin
+	ES	Mascara horizontal QVGA
+	FI	QVGA-vaakaolemus
+	FR	Habillage paysage QVGA
+	IT	Skin QVGA orizzontale
+	NL	QVGA Landscape-skin
+	NO	QVGA liggende skall
+	PL	Karnacja pozioma QVGA
+	RU	Oblozhka: QVGA, al'bomnaya orientaciya
+	SV	QVGA-skal i liggande format
+
+QVGA240SQUARE_SKIN
+# SLT: QVGA refers to the "quarter VGA" resolution of the display
+#	CS	QVGA skin krajiny
+#	DA	QVGA-tema, liggende
+	DE	Quadratischer QVGA-Skin (240x240)
+	EN	QVGA 240x240 Square Skin
+#	ES	Mascara horizontal QVGA
+#	FI	QVGA-vaakaolemus
+	FR	Habillage carre QVGA (240x240)
+#	IT	Skin QVGA orizzontale
+	NL	QVGA 240-Vierkant-skin
+#	NO	QVGA liggende skall
+#	PL	Karnacja pozioma QVGA
+#	RU	Oblozhka: QVGA, al'bomnaya orientaciya
+#	SV	QVGA-skal i liggande format
+
+SMALL_ART
+	CS	Maly obal alba
+	DA	Sma albumcovere
+	DE	Kleine Plattenhuellen
+	EN	Small Artwork
+	ES	Caratula de album pequena
+	FI	Pieni kansikuva
+	FR	Petites pochettes
+	IT	Copertina piccola
+	NL	Kleine hoesafbeeldingen
+	NO	Sma albumomslag
+	PL	Mala okladka
+	RU	Malen'kaya oblozhka
+	SV	Sma albumomslag
+
+LARGE_ART
+	CS	Velky obal alba
+	DA	Store albumcovere
+	DE	Grosse Plattenhuellen
+	EN	Large Artwork
+	ES	Caratula de album grande
+	FI	Suuri kuva
+	FR	Grandes pochettes
+	IT	Copertina grande
+	NL	Grote hoesafbeeldingen
+	NO	Stort albumomslag
+	PL	Duza okladka
+	RU	Bol'shaya oblozhka
+	SV	Stora albumomslag

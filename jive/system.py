@@ -48,6 +48,7 @@ from __future__ import annotations
 
 import os
 import platform
+import sys
 import tempfile
 import uuid
 from pathlib import Path
@@ -362,8 +363,8 @@ class System:
             # Clean up temp file on failure
             try:
                 os.unlink(tmp_path)
-            except OSError:
-                pass
+            except OSError as exc:
+                log.debug("atomic_write: could not remove temp file: %s", exc)
             raise
 
     # ------------------------------------------------------------------
@@ -410,17 +411,35 @@ class System:
 
         # 1. Try the directory of the running package
         pkg_dir = Path(__file__).resolve().parent
-        # e.g. jivelite-py/jive -> jivelite-py
+        # e.g. sordino/jive -> sordino
         project_root = pkg_dir.parent
+
+        # 2. PyInstaller frozen builds: _MEIPASS is the temp directory
+        #    where PyInstaller unpacks bundled data files at runtime.
+        meipass = Path(getattr(sys, "_MEIPASS", ""))
 
         # Common locations for applets / share data
         candidates = [
+            pkg_dir,  # sordino/jive — contains applets/ directly
+            pkg_dir / "data",  # bundled assets (copied by release workflow)
             project_root / "share" / "jive",
             project_root / "share",
             project_root,
             # Original jivelite layout
             pkg_dir.parent.parent / "share" / "jive",
+            # Sibling jivelite repo (fonts, images, assets)
+            project_root.parent / "jivelite" / "share" / "jive",
         ]
+
+        # PyInstaller: add _MEIPASS-relative paths so frozen builds
+        # find bundled applets, data, and share assets.
+        if meipass.is_dir():
+            candidates += [
+                meipass / "jive",  # applets/ live here
+                meipass / "jive" / "data",  # bundled skin assets
+                meipass / "share" / "jive",  # share/jive fonts & splash
+                meipass,
+            ]
 
         for c in candidates:
             if c.is_dir() and c not in paths:

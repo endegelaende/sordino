@@ -1,5 +1,10 @@
 """
-jive.ui.style — Style/skin lookup system for the Jivelite Python3 port.
+jive.ui.style — Style / skin lookup for the Jivelite Python3 port.
+
+Includes lazy resolution of skin style references: dicts with a
+``__type__`` key (e.g. ``{"__type__": "font", "path": "...", "size": 14}``)
+are automatically resolved into real Font / Surface / Tile objects on
+first access via :meth:`StyleDB.value`.
 
 Ported from ``src/jive_style.c`` and the Lua-side style tables in the
 original jivelite project.
@@ -96,6 +101,91 @@ log = logger("jivelite.ui.style")
 # Sentinel used to mark a cached "not found" lookup so that we
 # distinguish between "never looked up" and "looked up but absent".
 _SENTINEL_NIL = object()
+
+
+# ---------------------------------------------------------------------------
+# Lazy reference resolution
+# ---------------------------------------------------------------------------
+
+
+def _is_lazy_ref(val: Any) -> bool:
+    """Return ``True`` if *val* is a lazy-loadable style reference dict."""
+    return isinstance(val, dict) and "__type__" in val
+
+
+def _resolve_lazy(val: Dict[str, Any]) -> Any:
+    """Resolve a lazy style reference dict into a real object.
+
+    Supported ``__type__`` values:
+
+    * ``"font"`` → :class:`Font` via ``Font.load(path, size)``
+    * ``"image"`` → :class:`Surface` via ``Surface.load_image(path)``
+    * ``"tile_image"`` → :class:`Tile` via ``Tile.load_image(path)``
+    * ``"tile_fill"`` → :class:`Tile` via ``Tile.fill_color(color)``
+    * ``"tile_htiles"`` → :class:`Tile` via ``Tile.load_h_tiles(paths)``
+    * ``"tile_vtiles"`` → :class:`Tile` via ``Tile.load_v_tiles(paths)``
+    * ``"tile_9patch"`` → :class:`Tile` via ``Tile.load_tiles(paths)``
+
+    Returns the resolved object, or the original dict if resolution fails.
+    """
+    ref_type = val.get("__type__")
+
+    try:
+        if ref_type == "font":
+            from jive.ui.font import Font
+
+            path = val.get("path", "")
+            size = int(val.get("size", 14))
+            return Font.load(path, size)
+
+        elif ref_type == "image":
+            from jive.ui.surface import Surface
+
+            path = val.get("path", "")
+            return Surface.load_image(path)
+
+        elif ref_type == "tile_image":
+            from jive.ui.tile import Tile
+
+            path = val.get("path", "")
+            return Tile.load_image(path)
+
+        elif ref_type == "tile_fill":
+            from jive.ui.tile import Tile
+
+            color = val.get("color", 0x000000FF)
+            return Tile.fill_color(color)
+
+        elif ref_type == "tile_htiles":
+            from jive.ui.tile import Tile
+
+            paths = val.get("paths", [])
+            return Tile.load_htiles(paths)
+
+        elif ref_type == "tile_vtiles":
+            from jive.ui.tile import Tile
+
+            paths = val.get("paths", [])
+            return Tile.load_vtiles(paths)
+
+        elif ref_type == "tile_9patch":
+            from jive.ui.tile import Tile
+
+            paths = val.get("paths", [])
+            return Tile.load_tiles(paths)
+
+        else:
+            log.debug("Unknown lazy ref type: %s", ref_type)
+            return val
+
+    except Exception as exc:
+        log.warning(
+            "Failed to resolve lazy %s ref (%s): %s",
+            ref_type,
+            val.get("path") or val.get("paths", "?"),
+            exc,
+        )
+        return None
 
 
 # ---------------------------------------------------------------------------
@@ -280,21 +370,75 @@ class StyleDB:
         *args: Any,
     ) -> Any:
         """
-        Like ``rawvalue`` but resolves callables.
+        Like ``rawvalue`` but resolves callables and lazy references.
 
         If the looked-up value is a callable, it is called with
         ``(widget, *args)`` and the result is returned.
 
+        If the looked-up value is a lazy reference dict (contains a
+        ``__type__`` key), it is resolved into a real Font / Surface /
+        Tile object.  The resolved value replaces the lazy dict in the
+        underlying skin data so that subsequent lookups are instant.
+
         This mirrors the C ``jiveL_style_value``.
         """
         val = self.rawvalue(widget, key, default)
+
+        # Resolve lazy reference dicts
+        if _is_lazy_ref(val):
+            resolved = _resolve_lazy(val)
+            if resolved is not None and resolved is not val:
+                # Store back into the skin dict so we don't re-resolve
+                self._store_resolved(widget, key, resolved)
+                return resolved
+            # Resolution failed — return default
+            return default
+
         if callable(val):
             try:
                 return val(widget, *args)
             except Exception as exc:
-                log.warn(f"error in style function for key={key!r}: {exc}")
+                log.warn("error in style function for key=%r: %s", key, exc)
                 return default
         return val
+
+    def _store_resolved(self, widget: Widget, key: str, resolved: Any) -> None:
+        """Write *resolved* back into the skin dict and invalidate the cache entry.
+
+        This replaces the lazy reference dict in the skin so that
+        subsequent lookups (including via ``rawvalue``) return the
+        resolved object directly.
+        """
+        path_str = style_path(widget)
+        tokens = path_str.split(".")
+
+        # Walk the skin dict to find the leaf node that holds *key*
+        # Try progressively shorter sub-paths (matching find_value logic)
+        for start in range(len(tokens)):
+            node: Any = self._skin
+            ok = True
+            for tok in tokens[start:]:
+                if not isinstance(node, dict):
+                    ok = False
+                    break
+                child = node.get(tok)
+                if child is None:
+                    ok = False
+                    break
+                node = child
+
+            if ok and isinstance(node, dict) and key in node:
+                node[key] = resolved
+                # Invalidate the cache for this path
+                path_cache = self._cache.get(path_str)
+                if path_cache is not None:
+                    path_cache.pop(key, None)
+                return
+
+        # Could not locate the exact node — just invalidate the cache
+        path_cache = self._cache.get(path_str)
+        if path_cache is not None:
+            path_cache.pop(key, None)
 
     def __repr__(self) -> str:
         n_keys = len(self._skin)
@@ -331,7 +475,7 @@ def style_path(widget: Widget) -> str:
     """
     cached = getattr(widget, "_style_path", None)
     if cached is not None:
-        return cached
+        return str(cached)
 
     parts: List[str] = []
     w: Any = widget
@@ -351,10 +495,7 @@ def style_path(widget: Widget) -> str:
     path = ".".join(parts)
 
     # Cache on widget
-    try:
-        widget._style_path = path  # type: ignore[attr-defined]
-    except AttributeError:
-        pass
+    widget._style_path = path
 
     return path
 
@@ -383,15 +524,43 @@ def style_value(
     return skin.value(widget, key, default, *args)
 
 
+# Map skin-applet string constants to their enum int values.
+# Skin applets (HDSkin, JogglerSkin, etc.) define layout/layer constants
+# as plain strings like "LAYOUT_NORTH" instead of importing the enums
+# from jive.ui.constants.  This lookup table bridges the gap.
+_STR_TO_INT: Dict[str, int] = {
+    "LAYOUT_NORTH": 0,
+    "LAYOUT_EAST": 1,
+    "LAYOUT_SOUTH": 2,
+    "LAYOUT_WEST": 3,
+    "LAYOUT_CENTER": 4,
+    "LAYOUT_NONE": 5,
+    "LAYER_FRAME": 0x01,
+    "LAYER_CONTENT": 0x02,
+    "LAYER_CONTENT_OFF_STAGE": 0x04,
+    "LAYER_CONTENT_ON_STAGE": 0x08,
+    "LAYER_LOWER": 0x10,
+    "LAYER_TITLE": 0x20,
+    "LAYER_ALL": 0xFF,
+}
+
+
 def style_int(widget: Widget, key: str, default: int = 0) -> int:
     """
     Look up an integer style value.
 
     Booleans are converted to 0/1 (matching the C behaviour).
+    String constants like ``"LAYOUT_NORTH"`` are resolved via a
+    lookup table (skin applets use strings instead of enum imports).
     """
     val = skin.value(widget, key, default)
     if isinstance(val, bool):
         return int(val)
+    if isinstance(val, str):
+        mapped = _STR_TO_INT.get(val)
+        if mapped is not None:
+            return mapped
+        # Fall through to int() attempt for numeric strings
     try:
         return int(val)
     except (TypeError, ValueError):
@@ -449,8 +618,15 @@ def style_font(widget: Widget, key: str = "font") -> Any:
     If not found, returns a default FreeSans 15pt font.
     """
     val = skin.value(widget, key, None)
-    if val is not None:
-        return val
+    if val is not None and val is not False:
+        # Guard against unresolved lazy refs leaking through
+        if _is_lazy_ref(val):
+            resolved = _resolve_lazy(val)
+            if resolved is not None and resolved is not val:
+                return resolved
+            val = None
+        else:
+            return val
 
     # Default font — lazy import to avoid circular dependency
     try:
@@ -466,9 +642,18 @@ def style_image(
     key: str,
     default: Optional[Surface] = None,
 ) -> Optional[Surface]:
-    """Look up a ``Surface`` style value."""
+    """Look up a ``Surface`` style value.
+
+    If the skin stores a non-Surface sentinel (e.g. ``False``) to indicate
+    "no image", this function returns *default* instead so that callers
+    always receive either a real :class:`Surface` or ``None``.
+    """
     val = skin.value(widget, key, default)
-    return val
+    # Several skins use ``"img": False`` to mean "no image for this state".
+    # Guard against any non-Surface value leaking through.
+    if val is not None and not hasattr(val, "get_size"):
+        return default
+    return val  # type: ignore[no-any-return]  # duck-type checked above
 
 
 def style_tile(
@@ -476,9 +661,23 @@ def style_tile(
     key: str,
     default: Optional[Tile] = None,
 ) -> Optional[Tile]:
-    """Look up a ``Tile`` style value."""
+    """Look up a ``Tile`` style value.
+
+    In the Lua/C original, ``jive_style_tile`` checks ``lua_isuserdata``
+    and falls back to the default when the value is not a Tile (e.g.
+    ``bgImg = false``).  We replicate that here: any non-Tile, non-None
+    value (such as ``False``, ``0``, or a plain ``int``) is treated as
+    "no tile" and the *default* is returned instead.
+    """
     val = skin.value(widget, key, default)
-    return val
+    # Guard against unresolved lazy refs
+    if _is_lazy_ref(val):
+        resolved = _resolve_lazy(val)
+        return resolved if resolved is not None and resolved is not val else default
+    # Reject non-Tile values (e.g. bgImg = False means "no background")
+    if val is not None and not hasattr(val, "blit"):
+        return default
+    return val  # type: ignore[no-any-return]  # runtime type matches Tile | None
 
 
 def style_align(widget: Widget, key: str = "align", default: int = 0) -> int:
@@ -611,8 +810,8 @@ def style_array_size(widget: Widget, key: str) -> int:
         for k in arr:
             try:
                 max_key = max(max_key, int(k))
-            except (TypeError, ValueError):
-                pass
+            except (TypeError, ValueError) as exc:
+                log.debug("style array key parse: %s", exc)
         return max_key
     return 0
 
@@ -654,15 +853,31 @@ def style_array_font(
     index: int,
     value_key: str = "font",
 ) -> Any:
-    """Look up a font from an array-typed style value."""
+    """Look up a font from an array-typed style value.
+
+    Resolves lazy font references (``{"__type__": "font", ...}``) that
+    are stored in skin style arrays.  Without this resolution the caller
+    would receive the raw dict instead of a ``Font`` object, causing
+    rendering to silently fall back to defaults.
+    """
     val = style_array_value(widget, array_key, index, value_key, None)
     if val is not None:
-        return val
+        # Resolve lazy font reference dicts
+        if _is_lazy_ref(val):
+            resolved = _resolve_lazy(val)
+            if resolved is not None and resolved is not val:
+                # Store back so we don't re-resolve next time
+                arr = skin.rawvalue(widget, array_key, None)
+                if isinstance(arr, (list, tuple)) and index < len(arr):
+                    elem = arr[index]
+                    if isinstance(elem, dict):
+                        elem[value_key] = resolved
+                return resolved
+            # Resolution failed — fall through to default
+        else:
+            return val
 
-    # Default font fallback
-    try:
-        from jive.ui.font import Font
-
-        return Font.load("fonts/FreeSans.ttf", 15)
-    except Exception:
-        return None
+    # No per-line font defined — return None so the caller uses the
+    # base font instead.  (Returning a hardcoded fallback here would
+    # override the widget's own base font which is incorrect.)
+    return None

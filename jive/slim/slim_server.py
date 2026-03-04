@@ -134,8 +134,8 @@ def _get_ticks() -> int:
             ticks = fw.get_ticks()
             if ticks > 0:
                 return ticks
-    except (ImportError, AttributeError):
-        pass
+    except (ImportError, AttributeError) as exc:
+        log.debug("_get_ticks: framework not available: %s", exc)
     return int(time.monotonic() * 1000)
 
 
@@ -251,8 +251,18 @@ class SlimServer:
         self.realm: Optional[str] = None
         self.auth_failure_count: int = 0
 
-        # Artwork fetch task (stub — wired when Task system integrates)
-        self._artwork_fetch_task: Optional[Any] = None
+        # Artwork fetch task — mirrors Lua: obj.artworkFetchTask = Task("artwork", obj, processArtworkQueue)
+        try:
+            from jive.ui.task import PRIORITY_LOW, Task
+
+            self._artwork_fetch_task: Optional[Any] = Task(
+                "artwork", self, _process_artwork_queue_gen, priority=PRIORITY_LOW
+            )
+        except (ImportError, Exception) as exc:
+            log.warning(
+                "SlimServer.__init__: could not create artwork fetch task: %s", exc
+            )
+            self._artwork_fetch_task: Optional[Any] = None
 
         # Register in weak dict
         _server_ids[self.id] = self
@@ -630,8 +640,8 @@ class SlimServer:
                     username=cred.get("username", ""),
                     password=cred.get("password", ""),
                 )
-            except (ImportError, AttributeError, TypeError):
-                pass
+            except (ImportError, AttributeError, TypeError) as exc:
+                log.debug("_handle_credential: could not set credentials: %s", exc)
 
             # Force reconnection
             self.reconnect()
@@ -695,7 +705,7 @@ class SlimServer:
     def update_address(
         self,
         ip: str,
-        port: int,
+        port: Any,
         name: Optional[str] = None,
     ) -> None:
         """
@@ -704,6 +714,9 @@ class SlimServer:
         If the address has changed, the old connection is closed and
         a new one is opened.
         """
+        # Port may arrive as a string from TLV discovery parsing
+        port = int(port)
+
         if self.ip != ip or self.port != port or (name and self.name != name):
             log.debug(
                 "%s: address set to %s:%s netstate=%s name=%s",
@@ -738,8 +751,8 @@ class SlimServer:
                         username=cred.get("username", ""),
                         password=cred.get("password", ""),
                     )
-                except (ImportError, AttributeError, TypeError):
-                    pass
+                except (ImportError, AttributeError, TypeError) as exc:
+                    log.debug("_connect: could not set credentials: %s", exc)
 
             if not self.is_squeeze_network():
                 # Create artwork HTTP pool
@@ -840,7 +853,7 @@ class SlimServer:
         if self.netstate in ("connected", "connecting"):
             return
 
-        if self.last_seen == 0:
+        if not self.ip:
             log.debug("Server IP address is not known")
             return
 
@@ -859,13 +872,17 @@ class SlimServer:
         if not self.is_squeeze_network() and self._artwork_pool:
             try:
                 self._artwork_pool.close()
-            except Exception:
-                pass
+            except Exception as exc:
+                log.warning(
+                    "_disconnect_server_internals: error closing artwork pool: %s", exc
+                )
 
         try:
             self.comet.disconnect()
-        except Exception:
-            pass
+        except Exception as exc:
+            log.warning(
+                "_disconnect_server_internals: error disconnecting comet: %s", exc
+            )
 
     def disconnect(self) -> None:
         """Force disconnect from the server."""
@@ -948,15 +965,18 @@ class SlimServer:
         status = None
         try:
             status = comet_request.t_get_response_status()
-        except Exception:
-            pass
+        except Exception as exc:
+            log.warning("notify_cometHttpError: could not get response status: %s", exc)
 
         if status == 401:
             authenticate = None
             try:
                 authenticate = comet_request.t_get_response_header("WWW-Authenticate")
-            except Exception:
-                pass
+            except Exception as exc:
+                log.warning(
+                    "notify_cometHttpError: could not get WWW-Authenticate header: %s",
+                    exc,
+                )
 
             if authenticate:
                 match = re.search(r'Basic realm="(.*?)"', authenticate)
@@ -1042,8 +1062,8 @@ class SlimServer:
             try:
                 if icon.get_image():
                     icon.set_value(None)
-            except Exception:
-                pass
+            except Exception as exc:
+                log.warning("cancel_artwork: error clearing icon image: %s", exc)
             self.artwork_thumb_icons.pop(icon, None)
 
     def cancel_all_artwork(self) -> None:
@@ -1063,7 +1083,7 @@ class SlimServer:
         self,
         icon_id: str,
         icon: Any = None,
-        size: str = "200",
+        size: Any = "200",
         img_format: Optional[str] = None,
     ) -> None:
         """
@@ -1078,11 +1098,17 @@ class SlimServer:
             The artwork identifier (cover ID, URL, or path).
         icon : widget or None
             The Icon widget to update when artwork arrives.
-        size : str
-            Size specification (e.g., ``"200"`` or ``"200x200"``).
+        size : str or int
+            Size specification (e.g., ``"200"``, ``"200x200"``, or ``56``).
+            Integers are automatically converted to strings (Lua does
+            this implicitly).
         img_format : str or None
             Image format hint (e.g., ``"png"``).
         """
+        # Lua auto-converts numbers to strings; Python doesn't.
+        size = str(size)
+        icon_id = str(icon_id)
+
         logcache.debug("%s:fetch_artwork(%s, %s, %s)", self, icon_id, size, img_format)
 
         cache_key = f"{icon_id}@{size}/{img_format or ''}"
@@ -1115,7 +1141,7 @@ class SlimServer:
             else:
                 logcache.debug("..artwork in cache")
                 if icon is not None:
-                    image = self._load_artwork_image(cache_key, artwork, size)
+                    image = self._load_artwork_image(cache_key, artwork, size)  # type: ignore[arg-type]
                     _safe_set_value(icon, image)
                     self.artwork_thumb_icons.pop(icon, None)
                 return
@@ -1145,8 +1171,8 @@ class SlimServer:
         if self._artwork_fetch_task is not None:
             try:
                 self._artwork_fetch_task.add_task()
-            except Exception:
-                pass
+            except Exception as exc:
+                log.warning("fetch_artwork: could not wake fetch task: %s", exc)
 
     def _build_artwork_url(
         self,
@@ -1218,7 +1244,7 @@ class SlimServer:
             w, h = image.get_size()
 
             if w == 0 or h == 0:
-                self.image_cache[cache_key] = True  # type: ignore[assignment]
+                self.image_cache[cache_key] = True
                 return None
 
             # Parse size
@@ -1242,12 +1268,16 @@ class SlimServer:
 
     def process_artwork_queue(self) -> None:
         """
-        Process the artwork fetch queue.
+        Process the artwork fetch queue (non-generator convenience wrapper).
 
-        In the Lua original this is a Task that yields.  In Python
-        we process entries directly — the actual HTTP requests are
-        handled by the HttpPool or SocketHttp.
+        Drains up to 4 concurrent entries from the queue.  Called by
+        the generator task ``_process_artwork_queue_gen`` but can also
+        be invoked directly.
         """
+        self._drain_artwork_queue()
+
+    def _drain_artwork_queue(self) -> None:
+        """Drain artwork queue entries up to the concurrency limit."""
         while self.artwork_fetch_count < 4 and self.artwork_fetch_queue:
             entry = self.artwork_fetch_queue.pop()
             url = entry.get("url", "")
@@ -1270,9 +1300,9 @@ class SlimServer:
                     uri = req.get_uri()
                     http = SocketHttp(
                         self.jnt,
-                        uri.get("host"),
-                        uri.get("port"),
-                        uri.get("host"),
+                        uri.get("host"),  # type: ignore[arg-type]
+                        uri.get("port"),  # type: ignore[arg-type]
+                        uri.get("host"),  # type: ignore[arg-type]
                     )
                     http.fetch(req)
                 elif self._artwork_pool:
@@ -1288,24 +1318,29 @@ class SlimServer:
                 self.artwork_fetch_count += 1
 
             except Exception as exc:
-                log.error("Error processing artwork: %s", exc)
+                log.error(
+                    "Error processing artwork %s: %s", cache_key, exc, exc_info=True
+                )
 
     def _get_artwork_thumb_sink(
         self, cache_key: str, size: str, url: str
     ) -> Callable[..., None]:
         """Build a sink for artwork data."""
 
-        def sink(chunk: Any = None, err: Any = None) -> None:
+        def sink(chunk: Any = None, err: Any = None, request: Any = None) -> None:
             if err or chunk:
                 self.artwork_fetch_count = max(0, self.artwork_fetch_count - 1)
                 if self._artwork_fetch_task:
                     try:
                         self._artwork_fetch_task.add_task()
-                    except Exception:
-                        pass
+                    except Exception as exc:
+                        log.warning(
+                            "_get_artwork_thumb_sink: could not wake fetch task: %s",
+                            exc,
+                        )
 
             if err:
-                logcache.error("_get_artwork_thumb_sink(%s) error: %s", url, err)
+                logcache.debug("_get_artwork_thumb_sink(%s) error: %s", url, err)
                 return
 
             if chunk:
@@ -1481,6 +1516,23 @@ class SlimServer:
         """Send a background (non-user) request."""
         self.comet.request(*args)
 
+    # Lua-compatible camelCase aliases
+    userRequest = user_request
+    fetchArtwork = fetch_artwork
+    artworkThumbCached = artwork_thumb_cached
+    cancelArtwork = cancel_artwork
+    cancelAllArtwork = cancel_all_artwork
+    processArtworkQueue = process_artwork_queue
+    getVersion = get_version
+    isMoreRecent = is_more_recent
+    isSqueezeNetwork = is_squeeze_network
+    getAppParameters = get_app_parameters
+    setAppParameter = set_app_parameter
+    getCurrentServer = get_current_server
+    setCurrentServer = set_current_server
+    removeAllUserRequests = remove_all_user_requests
+    updateAddress = update_address
+
 
 # ===================================================================
 # Module-level helpers
@@ -1509,14 +1561,41 @@ def _to_int(value: Any, default: int = 0) -> int:
         return default
 
 
-def _safe_set_value(icon: Any, value: Any) -> None:
-    """Safely call ``icon.set_value(value)`` if the method exists."""
+def _process_artwork_queue_gen(server: "SlimServer") -> Any:
+    """Generator task function for artwork fetching.
+
+    Mirrors Lua ``processArtworkQueue`` — runs in an infinite loop,
+    drains the queue each time it is woken via ``addTask()``, then
+    yields ``False`` to suspend until woken again.
+    """
+    while True:
+        server._drain_artwork_queue()
+        yield False  # suspend until addTask() wakes us
+
+
+def _safe_set_value(icon: Any, image: Any) -> None:
+    """Safely call ``icon.set_value(image)`` if the method exists.
+
+    After setting the value, marks the parent Group and grandparent
+    Menu for re-layout so the new artwork size is picked up and the
+    widget is redrawn immediately.
+    """
     setter = getattr(icon, "set_value", None) or getattr(icon, "setValue", None)
     if setter and callable(setter):
         try:
-            setter(value)
-        except Exception:
-            pass
+            setter(image)
+            # Walk up: Icon → Group (parent) → Menu (grandparent).
+            # re_layout() is needed (not just re_draw()) because the
+            # icon size changes from 0x0 to e.g. 72x72 and the Group
+            # must recalculate child positions.
+            parent = getattr(icon, "parent", None)
+            if parent is not None and hasattr(parent, "re_layout"):
+                parent.re_layout()
+                grandparent = getattr(parent, "parent", None)
+                if grandparent is not None and hasattr(grandparent, "re_layout"):
+                    grandparent.re_layout()
+        except Exception as exc:
+            log.warning("_safe_set_value: error setting icon value: %s", exc)
 
 
 def reset_server_globals() -> None:

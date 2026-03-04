@@ -209,8 +209,8 @@ class NetworkThread:
                 ticks = framework.get_ticks()
                 if ticks > 0:
                     return ticks
-        except (ImportError, AttributeError):
-            pass
+        except (ImportError, AttributeError) as exc:
+            log.debug("_get_ticks: framework not available: %s", exc)
         return time.time() * 1000.0
 
     def t_add_read(
@@ -278,8 +278,8 @@ class NetworkThread:
                 entry.task.remove_task()
             try:
                 self._t_read_socks.remove(sock)
-            except ValueError:
-                pass
+            except ValueError as exc:
+                log.debug("t_remove_read: sock not in read list: %s", exc)
 
     def t_add_write(
         self,
@@ -338,8 +338,8 @@ class NetworkThread:
                 entry.task.remove_task()
             try:
                 self._t_write_socks.remove(sock)
-            except ValueError:
-                pass
+            except ValueError as exc:
+                log.debug("t_remove_write: sock not in write list: %s", exc)
 
     # ------------------------------------------------------------------
     # Select loop
@@ -819,10 +819,10 @@ class NetworkThread:
                     padded = [e.zfill(2) for e in elements]
                     mac = ":".join(padded)
                     log.debug("NetworkThread:arp() mac: %s", mac)
-                    sink(mac)
+                    sink(mac)  # type: ignore[call-arg]
                 else:
                     log.debug("NetworkThread:arp() mac: None")
-                    sink(None)
+                    sink(None)  # type: ignore[call-arg]
 
         proc = Process(self, cmd)
         proc.read(_arp_sink)

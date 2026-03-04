@@ -157,8 +157,8 @@ def _get_ticks() -> int:
             ticks = fw.get_ticks()
             if ticks > 0:
                 return ticks
-    except (ImportError, AttributeError):
-        pass
+    except (ImportError, AttributeError) as exc:
+        log.debug("_get_ticks: framework not available: %s", exc)
     return int(time.monotonic() * 1000)
 
 
@@ -849,7 +849,7 @@ class Player:
         """Return the player name."""
         name = self.info.get("name")
         if name:
-            return name
+            return name  # type: ignore[no-any-return]
         # Fallback: last 3 octets of MAC with colons removed
         suffix = self.id[9:] if len(self.id) > 9 else self.id
         return "Squeezebox " + suffix.replace(":", "")
@@ -1569,12 +1569,12 @@ class Player:
             vol = abs(vol)
 
         self.state["mixer volume"] = vol
-        return vol
+        return vol  # type: ignore[no-any-return]
 
     def get_volume(self) -> Optional[int]:
         """Return the current volume (from last status update)."""
         if self.state:
-            return self.state.get("mixer volume", 0)
+            return self.state.get("mixer volume", 0)  # type: ignore[no-any-return]
         return None
 
     # ------------------------------------------------------------------
@@ -1660,10 +1660,10 @@ class Player:
         return self.config is not False
 
     def needs_network_config(self) -> bool:
-        return self.config == "needsNetwork"
+        return self.config == "needsNetwork"  # type: ignore[no-any-return]
 
     def needs_music_source(self) -> bool:
-        return self.config == "needsServer"
+        return self.config == "needsServer"  # type: ignore[no-any-return]
 
     # ------------------------------------------------------------------
     # Sequence numbers (stub — LocalPlayer overrides)
@@ -1694,6 +1694,104 @@ class Player:
     def tie_window(self, window: Any) -> None:
         """Tie a window to this player (stub)."""
         pass
+
+    # ------------------------------------------------------------------
+    # Lua-compatible camelCase aliases
+    # ------------------------------------------------------------------
+    # Ported applets (SlimBrowser, NowPlaying, SelectPlayer, etc.) call
+    # Player methods using the original Lua camelCase names.  These
+    # aliases ensure ``hasattr(player, "getPlaylistSize")`` etc. succeed
+    # and route to the canonical snake_case implementation.
+
+    # --- Accessors ---
+    getId = get_id
+    getName = get_name
+    getModel = get_model
+    getUuid = get_uuid
+    getSSID = get_ssid
+    getPin = get_pin
+    clearPin = clear_pin
+    getMacAddress = get_mac_address
+    getSlimServer = get_slim_server
+    getVolume = get_volume
+    getPlayMode = get_play_mode
+    getEffectivePlayMode = get_effective_play_mode
+    getPlayerMode = get_player_mode
+    getPlayerStatus = get_player_status
+    getPlaylistSize = get_playlist_size
+    getPlaylistCurrentIndex = get_playlist_current_index
+    getPlaylistTimestamp = get_playlist_timestamp
+    getTrackElapsed = get_track_elapsed
+    getLastSeen = get_last_seen
+    getAlarmSnoozeSeconds = get_alarm_snooze_seconds
+    getAlarmTimeoutSeconds = get_alarm_timeout_seconds
+    getAlarmState = get_alarm_state
+    setAlarmState = set_alarm_state
+    getDigitalVolumeControl = get_digital_volume_control
+    useVolumeControl = use_volume_control
+    getRateLimitTime = get_rate_limit_time
+    getCapturePlayMode = get_capture_play_mode
+    setCapturePlayMode = set_capture_play_mode
+    getLastSqueezeCenter = get_last_squeeze_center
+    getLastBrowseIndex = get_last_browse_index
+    setLastBrowseIndex = set_last_browse_index
+    getLastBrowse = get_last_browse
+    setLastBrowse = set_last_browse
+    getInit = get_init
+    getLocalPlayer = get_local_player
+    getCurrentPlayer = get_current_player
+    setCurrentPlayer = set_current_player
+
+    # --- Predicates ---
+    isLocal = is_local
+    isLocalPlayer = is_local_player
+    isRemote = is_remote
+    isPowerOn = is_power_on
+    isPaused = is_paused
+    isCurrent = is_current
+    isConnected = is_connected
+    isAvailable = is_available
+    isNeedsUpgrade = is_needs_upgrade
+    isUpgrading = is_upgrading
+    isPresetDefined = is_preset_defined
+    isWaitingToPlay = is_waiting_to_play
+    setWaitingToPlay = set_waiting_to_play
+    isTrackSeekable = is_track_seekable
+    isSequenceNumberInSync = is_sequence_number_in_sync
+    hasConnectionFailed = has_connection_failed
+    needsNetworkConfig = needs_network_config
+    needsMusicSource = needs_music_source
+    canConnectToServer = can_connect_to_server
+
+    # --- Commands / mutations ---
+    togglePause = toggle_pause
+    stopPreview = stop_preview
+    stopAlarm = stop_alarm
+    setPower = set_power
+    powerToggle = power_toggle
+    repeatToggle = repeat_toggle
+    shuffleToggle = shuffle_toggle
+    sleepToggle = sleep_toggle
+    scanRew = scan_rew
+    scanFwd = scan_fwd
+    gotoTime = goto_time
+    volumeLocal = volume_local
+    numberHold = number_hold
+    presetPress = preset_press
+    playlistJumpIndex = playlist_jump_index
+    playlistDeleteIndex = playlist_delete_index
+    playlistZapIndex = playlist_zap_index
+    connectToServer = connect_to_server
+    disconnectFromServer = disconnect_from_server
+    updateIconbar = update_iconbar
+    updateInit = update_init
+    updatePlayerInfo = update_player_info
+    updateSsid = update_ssid
+    onStage = on_stage
+    offStage = off_stage
+    tieWindow = tie_window
+    setServerRefreshInProgress = set_server_refresh_in_progress
+    refreshLocallyMaintainedParameters = refresh_locally_maintained_parameters
 
     # ------------------------------------------------------------------
     # Representation

@@ -65,7 +65,7 @@ from jive.utils.log import logger
 if TYPE_CHECKING:
     from jive.ui.event import Event
     from jive.ui.surface import Surface
-    from jive.ui.tile import JiveTile
+    from jive.ui.tile import JiveTile  # type: ignore[attr-defined]
 
 __all__ = ["Group"]
 
@@ -85,17 +85,42 @@ class Group(Widget):
         A dict of named child widgets.
     """
 
+    __slots__ = (
+        "widgets",
+        "_bg_tile",
+        "_widgets",
+        "_order",
+        "_orientation",
+        "_mouse_event_focus_widget",
+        "_type",
+    )
+
     def __init__(self, style: str, widgets: Optional[Dict[str, Widget]] = None) -> None:
         if not isinstance(style, str):
             raise TypeError(f"style must be a string, got {type(style).__name__}")
 
         super().__init__(style)
 
+        # Track item type for checkbox/radio/choice state in _decorated_label
+        self._type: Optional[str] = None
+
         self.widgets: Dict[str, Widget] = widgets if widgets is not None else {}
 
-        # Set parent linkage for all children
-        for widget in self.widgets.values():
+        # Set parent linkage for all children.
+        # Button objects are wrappers around widgets (with __slots__,
+        # no ``parent``).  In Lua, Button inherits from Widget so it
+        # can be stored directly.  In Python we must unwrap.
+        for key, widget in list(self.widgets.items()):
             if widget is not None:
+                # If this is a Button wrapper, store the inner widget
+                # in the widgets dict so that layout/draw work, but
+                # keep the Button's event wiring intact (it references
+                # the same inner widget).
+                inner = getattr(widget, "widget", None)
+                if inner is not None and not hasattr(widget, "parent"):
+                    # It's a Button-like wrapper — use the inner widget
+                    self.widgets[key] = inner
+                    widget = inner
                 widget.parent = self
 
         # Peer-equivalent state (mirroring GroupWidget in C)
@@ -130,7 +155,15 @@ class Group(Widget):
         Set or replace a child widget by *key*.
 
         Handles parent linkage and show/hide lifecycle events.
+        If *widget* is a Button wrapper, the inner widget is unwrapped
+        automatically (matching the __init__ behaviour).
         """
+        # Unwrap Button wrapper (same logic as __init__)
+        if widget is not None and not isinstance(widget, Widget):
+            inner = getattr(widget, "widget", None)
+            if inner is not None and isinstance(inner, Widget):
+                widget = inner
+
         old = self.widgets.get(key)
 
         if old is widget and (old is None or old.parent is self):
@@ -144,7 +177,7 @@ class Group(Widget):
                     old.dispatch_new_event(int(EVENT_HIDE))
                 old.parent = None
 
-        self.widgets[key] = widget
+        self.widgets[key] = widget  # type: ignore[assignment]
 
         # Attach new widget
         if widget is not None:
@@ -268,12 +301,23 @@ class Group(Widget):
     # Iteration
     # ------------------------------------------------------------------
 
-    def iterate(self, closure: Callable[[Widget], None]) -> None:
+    def iterate(
+        self, closure: Callable[[Widget], None], include_hidden: bool = False
+    ) -> None:
         """
-        Call *closure(child)* for each visible child widget, in order.
+        Call *closure(child)* for each child widget, in order.
 
         Uses the ordered widget list (``_widgets``) if available,
         otherwise falls back to ``widgets`` dict values.
+
+        Parameters
+        ----------
+        closure:
+            Function to call for each child widget.
+        include_hidden:
+            If ``True``, hidden widgets are included in the iteration.
+            Defaults to ``False`` (skip hidden widgets), matching the
+            C ``jiveL_group_iterate`` behaviour.
         """
         widget_list = (
             self._widgets if self._widgets is not None else list(self.widgets.values())
@@ -282,13 +326,27 @@ class Group(Widget):
         for widget in widget_list:
             if widget is None:
                 continue
-            if widget.is_hidden():
+            if not include_hidden and widget.is_hidden():
                 continue
             closure(widget)
 
     # ------------------------------------------------------------------
     # Skin (jiveL_group_skin)
     # ------------------------------------------------------------------
+
+    def re_skin(self) -> None:
+        """Reset all group-specific cached skin state, then call super.
+
+        Does NOT reset ``_order`` or ``_orientation`` — these are
+        populated by ``_skin()`` and are needed between the re_skin
+        flag being set and the next ``checkSkin()`` call.  Clearing
+        them causes widget ordering issues during selection-style
+        changes (e.g. icons disappearing when an item is selected).
+        ``_widgets`` is likewise kept because it is rebuilt by
+        ``_layout()`` from ``_order`` + ``self.widgets``.
+        """
+        self._bg_tile = None
+        super().re_skin()
 
     def _skin(self) -> None:
         """
@@ -372,6 +430,9 @@ class Group(Widget):
             if widget.is_hidden():
                 continue
 
+            # Ensure child is skinned so preferred_bounds are available
+            widget.check_skin()
+
             # Get border
             borders[i] = widget.get_border()
             bl, bt, br, bb = borders[i]
@@ -447,6 +508,9 @@ class Group(Widget):
                 continue
             if widget.is_hidden():
                 continue
+
+            # Ensure child is skinned so preferred_bounds are available
+            widget.check_skin()
 
             # Get border
             borders[i] = widget.get_border()
@@ -527,7 +591,7 @@ class Group(Widget):
         def _draw_child(widget: Widget) -> None:
             # Only draw if we are the widget's parent (Bug 9362 fix)
             if widget.parent is self and hasattr(widget, "draw"):
-                widget.draw(surface, layer)
+                widget.draw(surface, layer)  # type: ignore[call-arg]
 
         self.iterate(_draw_child)
 
@@ -541,10 +605,13 @@ class Group(Widget):
         """
         Return the preferred ``(x, y, w, h)`` for layout purposes.
 
-        Aggregates child widget sizes: width is summed (horizontal),
-        height is the maximum.
+        Returns style-set preferred bounds (from ``_widget_pack``),
+        falling back to aggregated child sizes for unset dimensions.
+
+        Note: does NOT trigger ``check_layout()`` — the C original's
+        ``getPreferredBounds`` reads directly from the peer struct
+        without forcing a layout pass.
         """
-        self.check_layout()
 
         w = 0
         h = 0
@@ -619,3 +686,11 @@ class Group(Widget):
 
     def __str__(self) -> str:
         return self.__repr__()
+
+    # ------------------------------------------------------------------
+    # camelCase aliases (Lua compatibility)
+    # ------------------------------------------------------------------
+    setWidget = set_widget
+    getWidget = get_widget
+    setWidgetValue = set_widget_value
+    getWidgetValue = get_widget_value

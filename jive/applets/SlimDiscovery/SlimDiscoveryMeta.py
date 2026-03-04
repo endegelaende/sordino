@@ -163,9 +163,9 @@ class SlimDiscoveryMeta(AppletMeta):
 
         # -- Restore server --
         server: Any = None
-        server_name: Optional[str] = settings.get("serverName")
-        server_uuid: Optional[str] = settings.get("serverUuid")
-        server_init: Optional[Dict[str, Any]] = settings.get("serverInit")
+        server_name: Optional[str] = settings.get("serverName")  # type: ignore[union-attr]
+        server_uuid: Optional[str] = settings.get("serverUuid")  # type: ignore[union-attr]
+        server_init: Optional[Dict[str, Any]] = settings.get("serverInit")  # type: ignore[union-attr]
 
         if server_name:
             if not server_uuid:
@@ -185,9 +185,9 @@ class SlimDiscoveryMeta(AppletMeta):
 
         # -- Restore player --
         player: Any = None
-        player_id: Optional[str] = settings.get("playerId")
-        player_init: Optional[Dict[str, Any]] = settings.get("playerInit")
-        current_player_legacy: Any = settings.get("currentPlayer")
+        player_id: Optional[str] = settings.get("playerId")  # type: ignore[union-attr]
+        player_init: Optional[Dict[str, Any]] = settings.get("playerInit")  # type: ignore[union-attr]
+        current_player_legacy: Any = settings.get("currentPlayer")  # type: ignore[union-attr]
 
         if player_id:
             try:
@@ -225,8 +225,8 @@ class SlimDiscoveryMeta(AppletMeta):
                         )
                         player = candidate
                         break
-            except Exception:
-                pass
+            except Exception as exc:
+                log.debug("_do_configure: failed iterating local players: %s", exc)
 
         # Apply the selection
         if player is not None and slim_discovery is not None:
@@ -238,7 +238,7 @@ class SlimDiscoveryMeta(AppletMeta):
         # Handle the SqueezeNetwork dummy-player edge case
         if current_player_legacy == "ff:ff:ff:ff:ff:ff":
             log.info("SqueezeNetwork dummy player found")
-            settings["currentPlayer"] = "ff:ff:ff:ff:ff:fe"
+            settings["currentPlayer"] = "ff:ff:ff:ff:ff:fe"  # type: ignore[index]
             if jnt:
                 jnt.subscribe(self)
 
@@ -260,8 +260,8 @@ class SlimDiscoveryMeta(AppletMeta):
 
             if _jm is not None:
                 return getattr(_jm, "applet_manager", None)
-        except ImportError:
-            pass
+        except ImportError as exc:
+            log.debug("_get_applet_manager: jive_main not importable: %s", exc)
         return None
 
     def _get_jnt(self) -> Any:
@@ -271,6 +271,6 @@ class SlimDiscoveryMeta(AppletMeta):
 
             if _jm is not None:
                 return getattr(_jm, "jnt", None)
-        except ImportError:
-            pass
+        except ImportError as exc:
+            log.debug("_get_jnt: jive_main not importable: %s", exc)
         return None

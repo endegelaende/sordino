@@ -270,12 +270,12 @@ class IRMenuAccel:
         falls back to checking the IR code attribute directly.
         """
         if hasattr(event, "is_ir_code") and callable(event.is_ir_code):
-            return event.is_ir_code(button_name)
+            return bool(event.is_ir_code(button_name))
 
         # Fallback: check for an ir_button_name attribute (test support)
         ir_name = getattr(event, "ir_button_name", None)
         if ir_name is not None:
-            return ir_name == button_name
+            return bool(ir_name == button_name)
 
         return False
 

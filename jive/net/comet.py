@@ -98,7 +98,7 @@ CONNECTED = "CONNECTED"  # handshake completed
 UNCONNECTING = "UNCONNECTING"  # disconnect request sent
 
 # Version string for handshake
-_JIVE_VERSION = "jivelite-py/0.1.0"
+_JIVE_VERSION = "sordino/0.5.0"
 
 
 class _Subscription:
@@ -274,7 +274,7 @@ class Comet:
         """Enable or disable aggressive reconnection behavior."""
         self.aggressive = aggressive
 
-    def set_endpoint(self, ip: str, port: int, path: str = "/cometd") -> None:
+    def set_endpoint(self, ip: str, port: Any, path: str = "/cometd") -> None:
         """
         Set the server endpoint for the Comet connection.
 
@@ -288,6 +288,7 @@ class Comet:
             The absolute path to the Cometd handler.  Defaults to
             ``'/cometd'``.
         """
+        port = int(port)
         log.debug(
             "%s: set_endpoint state=%s, %s, %d, %s",
             self,
@@ -608,8 +609,8 @@ class Comet:
                 return True
 
         # Try pending requests
-        for i, req in enumerate(self.pending_reqs):
-            if req.reqid == request_id:
+        for i, req in enumerate(self.pending_reqs):  # type: ignore[assignment]
+            if req.reqid == request_id:  # type: ignore[attr-defined]
                 self.pending_reqs.pop(i)
                 return True
 
@@ -735,7 +736,7 @@ class Comet:
                 self.idle_timeout_triggered is None
                 and self.state == CONNECTED
                 and setattr(self, "idle_timeout_triggered", True)  # type: ignore[func-returns-value]
-                or self._disconnect()
+                or self._disconnect()  # type: ignore[func-returns-value]
                 if self.state == CONNECTED
                 else None
             ),
@@ -835,7 +836,7 @@ class Comet:
 
         req = CometRequest(
             sink=self._get_handshake_sink(),
-            uri=self.uri,
+            uri=self.uri,  # type: ignore[arg-type]
             data=data,
         )
 
@@ -943,7 +944,7 @@ class Comet:
 
         req = CometRequest(
             sink=self._get_event_sink(),
-            uri=self.uri,
+            uri=self.uri,  # type: ignore[arg-type]
             data=data,
         )
 
@@ -987,7 +988,7 @@ class Comet:
 
         req = CometRequest(
             sink=self._get_event_sink(),
-            uri=self.uri,
+            uri=self.uri,  # type: ignore[arg-type]
             data=data,
         )
 
@@ -1031,7 +1032,7 @@ class Comet:
 
         req = CometRequest(
             sink=self._get_request_sink(),
-            uri=self.uri,
+            uri=self.uri,  # type: ignore[arg-type]
             data=data,
         )
 
@@ -1067,7 +1068,7 @@ class Comet:
                 cmd = [sub.playerid or "", sub.request]
                 subscription_path = f"/{self.client_id}{sub.subscription}"
 
-                msg: Dict[str, Any] = {
+                msg: Dict[str, Any] = {  # type: ignore[no-redef]
                     "channel": "/slim/subscribe",
                     "id": sub.reqid,
                     "data": {
@@ -1077,7 +1078,7 @@ class Comet:
                 }
 
                 if sub.priority is not None:
-                    msg["data"]["priority"] = sub.priority
+                    msg["data"]["priority"] = sub.priority  # type: ignore[index]
 
                 # Add callback
                 if sub.subscription not in self.notify_callbacks:
@@ -1103,7 +1104,7 @@ class Comet:
             }
 
             if pending.priority is not None:
-                msg["data"]["priority"] = pending.priority
+                msg["data"]["priority"] = pending.priority  # type: ignore[index]
 
             # Only ask for a response if we have a callback
             if pending.func is not None:
@@ -1137,7 +1138,7 @@ class Comet:
 
         req = CometRequest(
             sink=self._get_request_sink(),
-            uri=self.uri,
+            uri=self.uri,  # type: ignore[arg-type]
             data=data,
         )
 
@@ -1155,6 +1156,8 @@ class Comet:
 
         if self.rhttp is not None:
             self.rhttp.fetch(req)
+        else:
+            log.error("rhttp is None, cannot send %d pending requests", len(data))
 
     # ------------------------------------------------------------------
     # Internal — Event / Request sinks
@@ -1253,8 +1256,8 @@ class Comet:
                     self.sent_reqs = [
                         r for r in self.sent_reqs if r.get("id") != event_id_int
                     ]
-                except (ValueError, TypeError):
-                    pass
+                except (ValueError, TypeError) as exc:
+                    log.debug("_response: event_id int conversion failed: %s", exc)
 
             # Handle response by channel
             if channel == "/meta/connect":
@@ -1371,8 +1374,8 @@ class Comet:
                 status_code, _ = comet_request.t_get_response_status()
                 if status_code == 401 and self.jnt is not None:
                     self.jnt.notify("cometHttpError", self, comet_request)
-            except (AttributeError, TypeError):
-                pass
+            except (AttributeError, TypeError) as exc:
+                log.debug("_handle_failure: could not get response status: %s", exc)
 
         # Force connection closed
         self._set_state(UNCONNECTED)
@@ -1383,8 +1386,8 @@ class Comet:
 
         try:
             retry_interval = int(self.advice.get("interval", RETRY_DEFAULT))
-        except (ValueError, TypeError):
-            pass
+        except (ValueError, TypeError) as exc:
+            log.debug("_handle_failure: retry interval conversion failed: %s", exc)
 
         if retry_interval == 0:
             # Retry immediately

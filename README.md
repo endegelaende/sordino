@@ -1,310 +1,365 @@
-# jivelite-py
+<p align="center">
+  <img src="share/jive/jive/app.png" alt="Sordino" width="128" height="128" />
+</p>
 
-**Python 3 port of [Jivelite](https://github.com/ralph-irving/jivelite)** — the community
-Lyrion Music Server (formerly Logitech Media Server / Squeezebox) control UI.
+<h1 align="center">Sordino</h1>
 
-- **Upstream:** <https://github.com/ralph-irving/jivelite> (C + Lua, BSD-3-Clause)
-- **Homepage:** <https://sourceforge.net/projects/lmsclients/files/jivelite/>
+<p align="center">
+  <strong>A JiveLite-compatible Squeezebox controller UI, rewritten in Python</strong>
+</p>
 
-Jivelite is a C + Lua application that renders the Squeezebox user interface on
-Linux, macOS and Windows.  This project re-implements the Lua UI layer and the
-C rendering primitives as a pure-Python package on top of **pygame** (or
-pygame-ce).
+<p align="center">
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-BSD--3--Clause-blue.svg" alt="License: BSD-3-Clause" /></a>
+  <img src="https://img.shields.io/badge/python-3.10%2B-3776ab.svg?logo=python&logoColor=white" alt="Python 3.10+" />
+  <img src="https://img.shields.io/badge/pygame--ce-2.5%2B-00cc00.svg" alt="pygame-ce 2.5+" />
+  <img src="https://img.shields.io/badge/status-alpha-orange.svg" alt="Status: Alpha" />
+</p>
 
-> **Status: Alpha (v0.2.0)**
-> The full UI widget toolkit, networking layer, and HomeMenu are functional and
-> tested (1669 tests passing).  Slim protocol, applet hosting, and full LMS
-> integration are not yet ported.
+<p align="center">
+  A complete Python 3 port of
+  <a href="https://github.com/ralph-irving/jivelite">JiveLite</a>
+  (C + Lua, BSD-3-Clause) — the community controller UI for the
+  <a href="https://lyrion.org/">Lyrion Music Server</a>
+  (formerly Logitech Media Server / Squeezebox).
+  <br />
+  Works with <a href="https://github.com/endegelaende/resonance-server">Resonance</a>,
+  Lyrion, and any LMS-compatible server.
+</p>
+
+---
+
+> **Disclaimer** — Sordino is a hobby project, **not affiliated with or endorsed by**
+> the Lyrion / LMS project or Logitech. It is under active development, **not finished**,
+> and will contain bugs. When behavior is unclear, the original JiveLite source code is
+> the reference. LLMs are used extensively as a coding partner throughout development.
+> Feedback and bug reports are very welcome!
 
 ---
 
 ## Table of Contents
 
-- [Screenshots](#screenshots)
+- [Quick Start](#quick-start)
 - [Architecture](#architecture)
-- [What Has Been Ported](#what-has-been-ported)
-- [What Has NOT Been Ported Yet](#what-has-not-been-ported-yet)
-- [Requirements](#requirements)
-- [Installation](#installation)
-- [Quick Start — Hello UI Demo](#quick-start--hello-ui-demo)
-- [Running Tests](#running-tests)
+- [Features](#features)
+- [Installation Details](#installation-details)
+- [Distribution](#distribution)
+- [First Steps](#first-steps)
 - [Project Structure](#project-structure)
-- [Porting Guide — Lua → Python Mapping](#porting-guide--lua--python-mapping)
+- [Type Checking](#type-checking)
+- [CI / CD](#ci--cd)
 - [Contributing](#contributing)
 - [License](#license)
+- [Acknowledgments](#acknowledgments)
 
 ---
 
-## Screenshots
+## Quick Start
 
-*(coming soon — run `examples/hello_ui.py` to see a live window)*
+**Linux / macOS:**
+
+```bash
+git clone https://github.com/endegelaende/sordino.git
+cd sordino
+python3 -m venv .venv
+source .venv/bin/activate
+pip install pygame-ce>=2.5.0
+pip install -e .
+
+# Clone JiveLite for skin images and fonts
+cd .. && git clone https://github.com/ralph-irving/jivelite.git && cd sordino
+
+sordino
+```
+
+**Windows (PowerShell):**
+
+```powershell
+git clone https://github.com/endegelaende/sordino.git
+cd sordino
+python -m venv .venv
+.venv\Scripts\activate
+pip install pygame-ce>=2.5.0
+pip install -e .
+
+# Clone JiveLite for skin images and fonts
+cd .. ; git clone https://github.com/ralph-irving/jivelite.git ; cd sordino
+
+sordino
+```
+
+Sordino discovers Lyrion / Resonance servers on the local network automatically
+via UDP broadcast on port 3483. If discovery doesn't find your server, it will
+appear in the "Choose Music Source" menu once the server is reachable.
+
+→ See [First Steps](#first-steps) for what to do next.
+
+<details>
+<summary><strong>Command-line options</strong></summary>
+
+```
+usage: sordino [-h] [--headless] [--version]
+
+Sordino — JiveLite-compatible Squeezebox controller UI
+
+options:
+  -h, --help   show this help message and exit
+  --headless   Run with SDL dummy video driver (no display)
+  --version    Print version and exit
+```
+
+Set `JIVELITE_DEBUG=1` in the environment for runtime diagnostics via the debug bridge.
+
+</details>
 
 ---
 
 ## Architecture
 
-The original Jivelite is a three-layer stack:
+The original JiveLite is a three-layer stack: **C** (SDL rendering, font/surface/widget
+primitives), **Lua** (UI logic, applets, skins, networking), and **SDL 1.2/2**
+(platform abstraction). Sordino replaces the C and Lua layers entirely with
+**pure Python**, using **pygame** (or pygame-ce) as the SDL abstraction:
 
 ```
-┌──────────────────────────────────────────────┐
-│  Lua UI layer  (share/jive/jive/ui/*.lua)    │  ← widget logic, skins, applets
-├──────────────────────────────────────────────┤
-│  C rendering   (src/jive_*.c)                │  ← SDL / font / surface / events
-├──────────────────────────────────────────────┤
-│  SDL 1.2 / SDL 2                             │
-└──────────────────────────────────────────────┘
+Original JiveLite                      Sordino
+┌────────────────────┐                 ┌────────────────────────────────────┐
+│  Lua UI Logic      │                 │  jive.applets.*   — 33 Applets    │
+│  (applets, skins,  │                 ├────────────────────────────────────┤
+│   networking)      │    ═══════►     │  jive.slim.*      — Slim Protocol │
+├────────────────────┤   Python 3      ├────────────────────────────────────┤
+│  C Rendering Layer │    port         │  jive.net.*       — Networking     │
+│  (jive_surface.c,  │                 ├────────────────────────────────────┤
+│   jive_font.c, …)  │                 │  jive.ui.*        — UI Toolkit    │
+├────────────────────┤                 ├────────────────────────────────────┤
+│  SDL 1.2           │                 │  pygame / pygame-ce (SDL 2)       │
+└────────────────────┘                 └────────────────────────────────────┘
 ```
 
-**jivelite-py** collapses the top two layers into Python and replaces SDL with
-pygame:
+Communication with the music server uses the same protocol as the original:
 
 ```
-┌──────────────────────────────────────────────┐
-│  jive.ui.*  — Python 3  (this project)       │  ← widget logic + rendering
-├──────────────────────────────────────────────┤
-│  pygame / pygame-ce                          │  ← SDL 2 abstraction
-└──────────────────────────────────────────────┘
+Sordino (Client)                    Resonance / LMS (Server)
+     │                                     │
+     │── UDP Broadcast (Port 3483) ───────►│  Discovery
+     │◄── TLV Response ───────────────────│
+     │                                     │
+     │── POST /cometd [handshake] ────────►│  Bayeux/Cometd
+     │◄── clientId ───────────────────────│
+     │                                     │
+     │── POST /slim/subscribe ────────────►│  Status Subscription
+     │◄── playlist + status data ─────────│
+     │                                     │
+     │── POST /jsonrpc.js ────────────────►│  Commands
+     │   ["playlist","play",…]             │  (play, pause, browse, …)
+     │                                     │
+     │◄── Push via Long-Poll ─────────────│  Live Updates
+     │   (re-executed status query)        │
 ```
-
-Every C source file (`jive_widget.c`, `jive_surface.c`, …) and every Lua module
-(`Widget.lua`, `Surface.lua`, …) has a 1-to-1 Python counterpart in
-`jive/ui/`.
-
-The upstream repository is available at
-<https://github.com/ralph-irving/jivelite>.  A local clone (shallow, all files
-present) is expected as a sibling directory `../jivelite/` for reference during
-development.
 
 ---
 
-## What Has Been Ported
+## Features
 
-### Milestone M1 — Foundation (Phase 2 Core)
+### What Has Been Ported
 
-| Original (C / Lua) | Python module | Description |
-|---|---|---|
-| `jive_event.c` / `Event.lua` | `jive.ui.event` | Typed events (key, mouse, scroll, action, …) |
-| `Framework.lua` | `jive.ui.framework` | Singleton event loop, window stack, actions |
-| `Timer.lua` | `jive.ui.timer` | Interval / one-shot callback timers |
-| `jive_surface.c` / `Surface.lua` | `jive.ui.surface` | Pygame surface wrapper, blit, clip, drawing |
-| `jive_font.c` / `Font.lua` | `jive.ui.font` | TTF loading, metrics, render cache |
-| `jive_widget.c` / `Widget.lua` | `jive.ui.widget` | Base widget (bounds, style, listeners, dirty flags) |
-| `jive.h` (constants) | `jive.ui.constants` | Event types, keys, alignment, layout enums |
+The entire JiveLite codebase has been ported to Python — no C or Lua code remains.
 
-### Milestone M2 — Tile, Style, Window
+| Area | Modules | Python LOC | Status |
+|------|---------|------------|--------|
+| UI widget toolkit (`jive/ui/`) | 37 | ~22,100 | ✅ Complete |
+| Networking (`jive/net/`) | 16 | ~7,250 | ✅ Complete |
+| Slim protocol (`jive/slim/`) | 4 | ~4,040 | ✅ Complete |
+| Utilities (`jive/utils/`) | 9 | ~3,560 | ✅ Complete |
+| Core (Applet/Manager/Main) | 7 | ~4,370 | ✅ Complete |
+| **Applets** | **33** | **~51,900** | **✅ Complete** |
+| **Total** | | **~93,200** | |
 
-| Original | Python module | Description |
-|---|---|---|
-| `Tile.lua` + C helpers | `jive.ui.tile` | 9-patch tile, fill-color, from-surface |
-| `jive_style.c` + Lua skin | `jive.ui.style` | Hierarchical style lookup, caching |
-| `jive_window.c` / `Window.lua` | `jive.ui.window` | Window widget, show/hide, border layout, transitions |
+### Applets
 
-### Milestone M3 — Icon, Label, Group
+All 33 applets from the original JiveLite have been ported:
 
-| Original | Python module | Description |
-|---|---|---|
-| `jive_icon.c` / `Icon.lua` | `jive.ui.icon` | Image display, animation frames |
-| `jive_label.c` / `Label.lua` | `jive.ui.label` | Single/multi-line text, scrolling, shadow |
-| `jive_group.c` / `Group.lua` | `jive.ui.group` | H/V container, ordered children, mouse routing |
+- **Core:** SlimBrowser (music browser + volume + scanner), NowPlaying, SlimMenus,
+  SlimDiscovery, SelectPlayer, ChooseMusicSource
+- **Skins (10):** JogglerSkin (800×480), HDSkin (1080p/720p/VGA), HDGridSkin (1080p grid),
+  PiGridSkin (RPi grid), QVGAbaseSkin, QVGAlandscapeSkin, QVGAportraitSkin,
+  QVGA240squareSkin, WQVGAlargeSkin, WQVGAsmallSkin
+- **Screensavers:** BlankScreenSaver, Clock (Analog/Digital/DotMatrix/WordClock),
+  ScreenSavers manager
+- **Setup:** SetupWelcome, SetupLanguage, SetupDateTime, SetupWallpaper,
+  SetupAppletInstaller, SelectSkin, CustomizeHomeMenu
+- **Utilities:** Screenshot, LogSettings, Quit, DesktopJive, HttpAuth, LineIn,
+  ImageViewer (7 ImageSource classes)
 
-### Milestone M4 — Hello UI Demo
+### Compatibility
 
-| File | Description |
-|---|---|
-| `examples/hello_ui.py` | Proof-of-life: opens a window, shows labels, auto-closes |
-
-### Milestone M5 — Further Widgets
-
-| Original | Python module | Description |
-|---|---|---|
-| `jive_textarea.c` / `Textarea.lua` | `jive.ui.textarea` | Multi-line text with word-wrap and scrolling |
-| `jive_slider.c` / `Slider.lua` + `Scrollbar.lua` | `jive.ui.slider` | Slider + Scrollbar (range, value, drag) |
-| `jive_menu.c` / `Menu.lua` | `jive.ui.menu` | Base menu (items, scrolling, key/mouse navigation) |
-| `SimpleMenu.lua` | `jive.ui.simplemenu` | Convenience menu with text + icon + callback items |
-| `Checkbox.lua` | `jive.ui.checkbox` | Toggle checkbox (extends Icon) |
-| `RadioButton.lua` + `RadioGroup.lua` | `jive.ui.radio` | Mutual-exclusion radio buttons |
-
-### Milestone M6 — Popup, Canvas, Choice & Scroll Helpers
-
-| Original | Python module | Description |
-|---|---|---|
-| `Canvas.lua` | `jive.ui.canvas` | Free-drawing widget (extends Icon, custom render function) |
-| `Audio.lua` | `jive.ui.audio` | Audio effects / playback (pygame.mixer wrapper / stub) |
-| `Popup.lua` | `jive.ui.popup` | Transient popup window (extends Window, auto-hide, transparent) |
-| `Choice.lua` | `jive.ui.choice` | Cyclic option selector (extends Label) |
-| `SnapshotWindow.lua` | `jive.ui.snapshotwindow` | Screen-capture window (extends Window, static blit) |
-| `ScrollWheel.lua` | `jive.ui.scrollwheel` | Non-accelerated scroll event filter |
-| `ScrollAccel.lua` | `jive.ui.scrollaccel` | Accelerated scroll event filter (extends ScrollWheel) |
-| `StickyMenu.lua` | `jive.ui.stickymenu` | Sticky-scroll menu (extends SimpleMenu, scroll resistance) |
-
-### Milestone M7 — Button, ContextMenu, Flick
-
-| Original | Python module | Description |
-|---|---|---|
-| `Button.lua` | `jive.ui.button` | Mouse-state-machine for press/hold/drag on widgets |
-| `ContextMenuWindow.lua` | `jive.ui.contextmenuwindow` | Context menu overlay with screenshot shading |
-| `Flick.lua` | `jive.ui.flick` | Touch gesture / flick engine (afterscroll, deceleration) |
-
-### Milestone M8 — Input Widgets & Task
-
-| Original | Python module | Description |
-|---|---|---|
-| `Task.lua` | `jive.ui.task` | Cooperative task scheduler (Python generators) |
-| `IRMenuAccel.lua` | `jive.ui.irmenuaccel` | IR remote accelerated scroll event filter |
-| `NumberLetterAccel.lua` | `jive.ui.numberletteraccel` | T9-style number-to-letter input for IR remotes |
-| `Keyboard.lua` | `jive.ui.keyboard` | On-screen keyboard (QWERTY, numeric, hex, email, IP) |
-| `Textinput.lua` + `jive_textinput.c` | `jive.ui.textinput` | Text input widget (cursor, char scrolling, value types) |
-| `Timeinput.lua` | `jive.ui.timeinput` | Time picker widget (12h/24h scroll-wheel menus) |
-
-### Milestone M9 — Networking & HomeMenu
-
-| Original | Python module | Description |
-|---|---|---|
-| `net/Socket.lua` | `jive.net.socket_base` | Abstract base socket (open/close, read/write pump) |
-| `net/SocketTcp.lua` | `jive.net.socket_tcp` | TCP client socket (connect, send/receive) |
-| `net/SocketUdp.lua` | `jive.net.socket_udp` | UDP socket (broadcast, sendto/receivefrom) |
-| `net/SocketTcpServer.lua` | `jive.net.socket_tcp_server` | TCP server socket (bind, listen, accept) |
-| `net/Process.lua` | `jive.net.process` | Subprocess reader (popen, non-blocking read) |
-| `jive_dns.c` + `net/DNS.lua` | `jive.net.dns` | Non-blocking DNS resolution |
-| `net/NetworkThread.lua` | `jive.net.network_thread` | Select-based network I/O coordinator |
-| `net/WakeOnLan.lua` | `jive.net.wake_on_lan` | Wake-on-LAN magic packet sender |
-| `net/RequestHttp.lua` | `jive.net.request_http` | HTTP request object (method, URI, headers, body) |
-| `net/RequestJsonRpc.lua` | `jive.net.request_jsonrpc` | JSON-RPC request over HTTP POST |
-| `net/SocketHttp.lua` | `jive.net.socket_http` | HTTP client socket (state machine) |
-| `net/SocketHttpQueue.lua` | `jive.net.socket_http_queue` | HTTP socket with external request queue |
-| `net/HttpPool.lua` | `jive.net.http_pool` | Connection pool managing multiple HTTP sockets |
-| `net/CometRequest.lua` | `jive.net.comet_request` | Comet/Bayeux HTTP request (JSON body, chunked) |
-| `net/Comet.lua` | `jive.net.comet` | Cometd/Bayeux protocol client (subscribe, long-poll) |
-| `HomeMenu.lua` | `jive.ui.homemenu` | Applet-driven home menu (node tree, ranking, custom nodes) |
-
-### Utilities (fully ported)
-
-| Original Lua | Python module | Description |
-|---|---|---|
-| `utils/autotable.lua` | `jive.utils.autotable` | Auto-vivifying nested dicts |
-| `utils/datetime.lua` | `jive.utils.datetime_utils` | Date/time formatting helpers |
-| `utils/debug.lua` | `jive.utils.debug` | Debug / traceback utilities |
-| `utils/dumper.lua` | `jive.utils.dumper` | Pretty-print nested structures |
-| `utils/jsonfilters.lua` | `jive.utils.jsonfilters` | JSON sink/source filters |
-| `utils/locale.lua` | `jive.utils.locale` | Locale / i18n string tables |
-| `utils/log.lua` | `jive.utils.log` | Logging subsystem |
-| `utils/string.lua` | `jive.utils.string_utils` | String helper functions |
-| `utils/table.lua` | `jive.utils.table_utils` | Table/dict utilities |
+- **Servers:** [Resonance](https://github.com/endegelaende/resonance-server),
+  [Lyrion Music Server](https://lyrion.org/), any LMS-compatible server
+- **Protocol:** Cometd/Bayeux over HTTP long-polling, JSON-RPC, UDP broadcast discovery
+- **Python:** 3.10, 3.11, 3.12, 3.13, 3.14
+- **Platforms:** Windows, Linux, macOS
+- **Rendering:** pygame-ce ≥ 2.5.0 (recommended) or pygame ≥ 2.5.0
 
 ---
 
-## What Has NOT Been Ported Yet
+## Installation Details
 
-| Area | Lua / C Files | Notes |
-|---|---|---|
-| **Slim protocol** | `jive/slim/*.lua` | Player, SlimServer, ArtworkCache |
-| **Applet system** | `Applet.lua`, `AppletManager.lua`, `AppletMeta.lua` | Plugin framework |
-| **Visualizer** | `vis.lua`, `src/visualizer/` | Audio visualization |
-| **Skins / Applets** | `share/jive/applets/` | All skin definitions and applets |
-
----
-
-## Requirements
-
-- **Python 3.10+**
-- **pygame >= 2.5** or **pygame-ce >= 2.5**
-
-Optional (development):
-
-- pytest >= 7.0
-- pytest-cov >= 4.0
-- mypy >= 1.0
-
----
-
-## Installation
+### From PyPI (recommended)
 
 ```bash
-# Clone the upstream reference (optional, for porting new modules)
-git clone https://github.com/ralph-irving/jivelite.git
+pip install sordino
+```
 
-# Clone / copy the Python port
-cd jivelite-py
+This installs Sordino with **pygame-ce** as the default rendering backend.
+The `sordino` command becomes available immediately.
 
-# Create a virtual environment (recommended)
-python -m venv .venv
-source .venv/bin/activate      # Linux / macOS
-# .venv\Scripts\activate       # Windows
+> **Note:** The PyPI package includes skin images and fonts. No additional
+> downloads are required for basic functionality.
 
-# Install in editable mode with dev dependencies
+### From Source (development)
+
+```bash
+git clone https://github.com/endegelaende/sordino.git
+cd sordino
 pip install -e ".[dev]"
 ```
 
-Or install just the runtime dependency:
+For development, you also need the **JiveLite** repository as a sibling directory
+for skin images and fonts:
 
 ```bash
-pip install pygame-ce
+cd ..
+git clone https://github.com/ralph-irving/jivelite.git
 ```
+
+Sordino's search-path system automatically finds assets in `../jivelite/share/jive/`
+relative to the project root.
+
+### Python Dependencies
+
+| Package | Purpose | License |
+|---------|---------|---------|
+| **pygame-ce** ≥ 2.5.0 | SDL2 rendering, input, audio | LGPL-2.1 |
+
+Optional:
+
+| Package | Purpose | Install |
+|---------|---------|---------|
+| pygame (legacy) | Alternative to pygame-ce | `pip install sordino[pygame-legacy]` |
+| PyInstaller ≥ 6.0 | Build frozen executables | `pip install sordino[freeze]` |
+
+Dev:
+
+| Package | Purpose | Install |
+|---------|---------|---------|
+| pytest, pytest-cov, mypy, ruff | Testing & linting | `pip install sordino[dev]` |
 
 ---
 
-## Quick Start — Hello UI Demo
+## Distribution
+
+Sordino supports three distribution methods, mirroring the original JiveLite approach
+(a portable folder with `jivelite.exe` + DLLs) while adding modern Python packaging.
+
+### 1. PyPI — `pip install sordino`
+
+The standard Python way. Installs the `sordino` command, pygame-ce, and all
+bundled assets. Requires Python 3.10+ on the target machine.
 
 ```bash
-python examples/hello_ui.py
+pip install sordino
+sordino
 ```
 
-This opens a 480 × 272 pygame window displaying:
+### 2. Portable Executable (PyInstaller)
 
-- A title label ("Hello, Jivelite!")
-- A body label ("Python3 port — Milestone M4")
-- A footer label
+A self-contained folder with `sordino.exe` (Windows) or `sordino` (Linux/macOS) —
+**no Python installation required**. This mirrors the original JiveLite distribution
+model: a flat folder you can copy anywhere and double-click to run.
 
-The window auto-closes after 5 seconds or when you press **ESC**.
-
-### Headless / CI
-
-If you don't have a display (CI, SSH, WSL without GUI):
+```
+Original JiveLite:              Sordino:
+┌──────────────────────┐        ┌──────────────────────┐
+│ jivelite.exe         │        │ sordino.exe          │
+│ SDL.dll, lua.dll, …  │        │ python312.dll, …     │
+│ lua/                 │        │ jive/                │
+│ fonts/               │        │ share/jive/          │
+└──────────────────────┘        └──────────────────────┘
+```
 
 ```bash
-export SDL_VIDEODRIVER=dummy
-python examples/hello_ui.py
+# Prerequisites
+pip install -e ".[freeze]"
+
+# Bundle skin assets into jive/data/ (see "Asset Bundling" below)
+
+# Build with the spec file
+python -m PyInstaller sordino.spec --noconfirm --clean
+
+# Result: dist/sordino/ contains everything needed to run
+dist/sordino/sordino.exe         # Windows
+dist/sordino/sordino             # Linux / macOS
 ```
+
+The `sordino.spec` file handles all data collection automatically — applet
+`.py` files, skin images, fonts, localisation strings, and wallpapers.
+
+### 3. GitHub Releases
+
+Pre-built portable executables for Windows, Linux, and macOS are published
+as GitHub Release assets on every version tag. Download, extract, and run — no
+installation needed.
+
+### Asset Bundling
+
+Skin images (~3,000 files, ~27 MB) come from the upstream JiveLite repository
+and are not stored in the Sordino git repo. For distribution builds (wheels and
+frozen executables), they must be copied into `jive/data/` first:
+
+```bash
+# Requires ../jivelite/ as a sibling directory
+mkdir -p jive/data
+cp -r ../jivelite/share/jive/fonts   jive/data/fonts
+cp -r ../jivelite/share/jive/jive    jive/data/jive
+cp -r ../jivelite/share/jive/applets jive/data/applets
+
+# Merge local share/jive assets (overrides)
+cp share/jive/fonts/*.ttf  jive/data/fonts/ 2>/dev/null || true
+cp share/jive/jive/*.png   jive/data/jive/  2>/dev/null || true
+cp share/jive/jive/*.txt   jive/data/jive/  2>/dev/null || true
+
+# Remove bundled assets
+# rm -rf jive/data/
+```
+
+The `jive/data/` directory is included in wheels via `pyproject.toml` package-data
+globs. The release workflow (`release.yml`) performs this bundling automatically.
 
 ---
 
-## Running Tests
+## First Steps
+
+Once Sordino is running:
+
+1. **Server discovery** — Sordino broadcasts UDP packets on port 3483. If a
+   Lyrion Music Server or Resonance server is running on the same subnet, it
+   appears automatically in the server list.
+
+2. **Select a player** — Choose a connected Squeezebox, Squeezelite, or other
+   LMS-compatible player from the player selection menu.
+
+3. **Browse and play** — Navigate your music library, internet radio, or
+   favorites. Select a track and press play.
+
+### Headless / CI Mode
+
+All examples and the main application support headless mode:
 
 ```bash
-# All tests
-python -m pytest
+sordino --headless
 
-# Verbose with short tracebacks (default via pyproject.toml)
-python -m pytest tests/
-
-# Just UI tests
-python -m pytest tests/test_ui.py
-
-# Just utility tests
-python -m pytest tests/test_utils.py
-
-# With coverage
-python -m pytest --cov=jive --cov-report=term-missing
-```
-
-### Current Test Count
-
-| Test file | Tests | Status |
-|---|---|---|
-| `tests/test_ui.py` | 1130 | ✅ all passing |
-| `tests/test_utils.py` | 327 | ✅ all passing |
-| `tests/test_net.py` | 212 | ✅ all passing |
-| **Total** | **1669** | **✅ all passing** |
-
-### Headless Testing
-
-Tests that require a pygame display use `SDL_VIDEODRIVER=dummy` internally.
-If tests fail with "No available video device", set the environment variable:
-
-```bash
+# Or set environment variables directly
 export SDL_VIDEODRIVER=dummy    # Linux / macOS
-set SDL_VIDEODRIVER=dummy       # Windows cmd
-$env:SDL_VIDEODRIVER="dummy"    # Windows PowerShell
+export SDL_AUDIODRIVER=dummy
 ```
 
 ---
@@ -312,189 +367,184 @@ $env:SDL_VIDEODRIVER="dummy"    # Windows PowerShell
 ## Project Structure
 
 ```
-jivelite-py/
-├── jive/
+sordino/
+├── jive/                           # Main package (~93,200 LOC)
 │   ├── __init__.py
-│   ├── ui/                         # UI widget framework
-│   │   ├── __init__.py
-│   │   ├── constants.py            # Event types, key codes, enums
-│   │   ├── event.py                # Event objects
-│   │   ├── timer.py                # Timer system
-│   │   ├── surface.py              # pygame.Surface wrapper
-│   │   ├── font.py                 # Font loading & metrics
-│   │   ├── widget.py               # Base Widget class
-│   │   ├── framework.py            # Framework singleton
-│   │   ├── tile.py                 # 9-patch tile system
-│   │   ├── style.py                # Style / skin lookup
-│   │   ├── window.py               # Window widget
-│   │   ├── icon.py                 # Icon widget
-│   │   ├── label.py                # Label widget
-│   │   ├── group.py                # Group container
-│   │   ├── textarea.py             # Multi-line text with word-wrap
-│   │   ├── slider.py               # Slider + Scrollbar
-│   │   ├── menu.py                 # Base menu widget
-│   │   ├── simplemenu.py           # Convenience text+icon+callback menu
-│   │   ├── checkbox.py             # Toggle checkbox
-│   │   ├── radio.py                # RadioGroup + RadioButton
-│   │   ├── canvas.py               # Free-drawing widget
-│   │   ├── audio.py                # Audio effects (pygame.mixer)
-│   │   ├── popup.py                # Transient popup window
-│   │   ├── choice.py               # Cyclic option selector
-│   │   ├── snapshotwindow.py       # Screen-capture window
-│   │   ├── scrollwheel.py          # Non-accel scroll filter
-│   │   ├── scrollaccel.py          # Accelerated scroll filter
-│   │   ├── stickymenu.py           # Sticky-scroll menu
-│   │   ├── button.py               # Mouse state machine
-│   │   ├── flick.py                # Touch gesture / flick engine
-│   │   ├── contextmenuwindow.py    # Context menu overlay
-│   │   ├── task.py                 # Cooperative task scheduler
-│   │   ├── irmenuaccel.py          # IR remote acceleration
-│   │   ├── numberletteraccel.py    # T9-style input handler
-│   │   ├── keyboard.py             # On-screen keyboard
-│   │   ├── textinput.py            # Text input widget
-│   │   ├── timeinput.py            # Time picker widget
-│   │   └── homemenu.py             # Applet-driven home menu
-│   ├── net/                        # Network layer
-│   │   ├── socket_base.py          # Abstract base socket
-│   │   ├── socket_tcp.py           # TCP client socket
-│   │   ├── socket_udp.py           # UDP socket
-│   │   ├── socket_tcp_server.py    # TCP server socket
-│   │   ├── process.py              # Subprocess reader
-│   │   ├── dns.py                  # DNS resolution
-│   │   ├── network_thread.py       # Network I/O coordinator
-│   │   ├── wake_on_lan.py          # Wake-on-LAN sender
-│   │   ├── request_http.py         # HTTP request object
-│   │   ├── request_jsonrpc.py      # JSON-RPC request
-│   │   ├── socket_http.py          # HTTP client socket
-│   │   ├── socket_http_queue.py    # HTTP socket queue
-│   │   ├── http_pool.py            # HTTP connection pool
-│   │   ├── comet_request.py        # Comet/Bayeux request
-│   │   └── comet.py                # Cometd protocol client
-│   ├── utils/                      # Utility modules
-│   │   ├── autotable.py
-│   │   ├── datetime_utils.py
-│   │   ├── debug.py
-│   │   ├── dumper.py
-│   │   ├── jsonfilters.py
-│   │   ├── locale.py
-│   │   ├── log.py
-│   │   ├── string_utils.py
-│   │   └── table_utils.py
-│   └── slim/                       # (placeholder — not yet ported)
-├── examples/
-│   └── hello_ui.py                 # Hello World demo
-├── tests/
-│   ├── test_ui.py                  # UI widget tests (1130 tests)
-│   ├── test_utils.py               # Utility module tests (327 tests)
-│   └── test_net.py                 # Network layer tests (212 tests)
-└── pyproject.toml                  # Project metadata & build config
+│   ├── main.py                     # CLI entry point
+│   ├── jive_main.py                # JiveMain + NotificationHub
+│   ├── applet.py                   # Applet base class
+│   ├── applet_meta.py              # AppletMeta base class
+│   ├── applet_manager.py           # Applet discovery & lifecycle
+│   ├── iconbar.py                  # Playmode / Repeat / Shuffle bar
+│   ├── input_to_action_map.py      # Key/IR/Gesture → Action mappings
+│   ├── system.py                   # System identity & capabilities
+│   ├── debug_bridge.py             # Runtime diagnostics (JIVELITE_DEBUG=1)
+│   │
+│   ├── ui/                         # UI widget framework (37 modules)
+│   │   ├── framework.py            #   Event loop, window stack
+│   │   ├── widget.py               #   Base widget
+│   │   ├── window.py               #   Window (show/hide, transitions)
+│   │   ├── menu.py                 #   Menu (items, scrolling, navigation)
+│   │   ├── simplemenu.py           #   SimpleMenu (text + icon + callback)
+│   │   ├── style.py                #   Style/skin lookup & caching
+│   │   ├── surface.py              #   pygame.Surface wrapper
+│   │   ├── font.py                 #   TTF loading & render cache
+│   │   ├── tile.py                 #   9-patch tile system
+│   │   ├── label.py, icon.py       #   Text and image widgets
+│   │   ├── group.py                #   H/V container layout
+│   │   ├── keyboard.py             #   On-screen keyboard
+│   │   └── ...                     #   25 more modules
+│   │
+│   ├── net/                        # Networking (16 modules)
+│   │   ├── comet.py                #   Cometd/Bayeux protocol client
+│   │   ├── socket_http.py          #   HTTP client (state machine)
+│   │   ├── network_thread.py       #   Select-based I/O coordinator
+│   │   └── ...                     #   13 more modules
+│   │
+│   ├── slim/                       # Slim protocol (4 modules)
+│   │   ├── slim_server.py          #   SlimServer (Comet, player tracking)
+│   │   ├── player.py               #   Player (playback, playlist, commands)
+│   │   ├── local_player.py         #   LocalPlayer
+│   │   └── artwork_cache.py        #   LRU artwork cache
+│   │
+│   ├── utils/                      # Utilities (9 modules)
+│   │
+│   └── applets/                    # All 33 applets
+│       ├── SlimBrowser/            #   Music browser + volume
+│       ├── NowPlaying/             #   Now-playing screen
+│       ├── JogglerSkin/            #   Joggler skin (800×480)
+│       ├── HDSkin/                 #   HD skin (1080p/720p)
+│       └── ...                     #   29 more applets
+│
+├── share/jive/                     # Assets (fonts, splash, strings)
+├── assets/                         # App icon (SVG, ICO, PNGs)
+├── .github/workflows/
+│   ├── ci.yml                      # CI (test matrix + mypy)
+│   └── release.yml                 # Release (PyPI + frozen builds)
+│
+├── sordino.spec                    # PyInstaller spec for frozen builds
+├── pyproject.toml                  # Package configuration
+├── MANIFEST.in                     # Source distribution inclusions
+├── LICENSE                         # BSD-3-Clause
+├── CHANGELOG.md                    # Version history
+├── KONTEXT.md                      # AI assistant context
+├── THIRD_PARTY_NOTICES.md          # Dependency licenses
+└── README.md                       # ← you are here
 ```
 
 ---
 
-## Porting Guide — Lua → Python Mapping
+## Running the Tests
 
-### General Principles
+> **Note:** The test suite is being reworked and not yet included in the repository.
+> The CI pipeline currently runs **mypy strict** type-checking and an import smoke test.
 
-| Lua pattern | Python equivalent |
-|---|---|
-| `oo.class(Widget)` | `class Foo(Widget):` |
-| `self:method()` | `self.method()` |
-| `function obj:method(…)` | `def method(self, …):` |
-| `_ENV` / `module(…)` | Regular Python module |
-| `coxpcall` / `copcall` | `try` / `except` (native) |
-| `log:debug(…)` | `logger.debug(…)` (stdlib `logging`) |
-| Table with 1-based index | List with 0-based index |
-| `nil` | `None` |
-| `type(x) == "function"` | `callable(x)` |
-
-### Style / Skin System
-
-The Lua skin is a nested table loaded from a skin applet.  In Python, the
-skin is a nested `dict` set via `skin.data = { … }`.  Style lookups use
-the same path-based resolution:
-
-```
-widget style "menu_item" → skin["menu"]["item"] (strips prefixes)
+```bash
+# Type checking (currently the main CI check)
+python -m mypy jive/ --strict
 ```
 
-### Event System
+---
 
-| Lua | Python |
-|---|---|
-| `Event:new(EVENT_SCROLL, rel)` | `Event(EVENT_SCROLL, rel=amount)` |
-| `Event:new(EVENT_KEY_PRESS, code)` | `Event(EVENT_KEY_PRESS, code=key)` |
-| `Event:new(EVENT_MOUSE_DOWN, x, y)` | `Event(EVENT_MOUSE_DOWN, x=x, y=y)` |
-| `event:getScroll()` | `event.get_scroll()` |
-| `event:getKeycode()` | `event.get_keycode()` |
+## Type Checking
 
-### Widget Dirty Flags
+The entire codebase passes **mypy strict mode**:
 
-| Lua flag | Python attribute |
-|---|---|
-| `NEEDS_SKIN` | `_needs_skin` |
-| `NEEDS_LAYOUT` | `_needs_layout` |
-| `NEEDS_DRAW` | `_needs_draw` |
+```bash
+python -m mypy jive/ --strict
+```
 
-### C → Python Correspondence
+All functions and methods have full type annotations, including parametrized generics,
+`TypeAlias` definitions, and targeted `# type: ignore[...]` comments where Lua-port
+dynamic patterns require it.
 
-| C source | Python module | Key functions ported |
-|---|---|---|
-| `jive_widget.c` | `widget.py` | bounds, pack, align, iterate, dispatch |
-| `jive_surface.c` | `surface.py` | blit, clip, fill, draw_text, rotozoom |
-| `jive_font.c` | `font.py` | load, width, nwidth, height, ascend, render |
-| `jive_style.c` | `style.py` | style_path, find_value, style_int, style_color |
-| `jive_event.c` | `event.py` | Event construction, payload access |
-| `jive_icon.c` | `icon.py` | prepare, layout, draw, animation |
-| `jive_label.c` | `label.py` | prepare, layout, draw, word-wrap |
-| `jive_group.c` | `group.py` | h/v layout, iterate, preferred_bounds |
-| `jive_window.c` | `window.py` | show/hide, border_layout, transitions |
-| `jive_menu.c` | `menu.py` | item management, scrolling, layout |
-| `jive_slider.c` | `slider.py` | range, value, drag, pill positioning |
-| `jive_textarea.c` | `textarea.py` | word-wrap, pixel-offset scrolling |
-| — | `canvas.py` | custom render function draw |
-| — | `audio.py` | sound loading, playback, effects toggle |
-| — | `popup.py` | transient overlay, auto-hide |
-| — | `choice.py` | cyclic option selection |
-| — | `snapshotwindow.py` | screen capture, static blit |
-| — | `scrollwheel.py` | normalised scroll direction |
-| — | `scrollaccel.py` | tiered scroll acceleration |
-| — | `stickymenu.py` | scroll resistance multiplier |
+---
+
+## CI / CD
+
+GitHub Actions runs on every push and pull request:
+
+| Workflow | Trigger | Description |
+|----------|---------|-------------|
+| **CI** (`ci.yml`) | Push / PR to `main` | Test matrix (Python 3.10–3.13 × Ubuntu + Windows) + mypy strict |
+| **Release** (`release.yml`) | Tag `v*` | Build wheel + sdist, frozen executables (Win/Linux/macOS), publish to PyPI, create GitHub Release |
+
+PyPI publishing uses [Trusted Publisher](https://docs.pypi.org/trusted-publishers/)
+(OIDC) — no API tokens stored in secrets.
 
 ---
 
 ## Contributing
 
-1. **Pick an un-ported module** from the "What Has NOT Been Ported Yet" table
-2. Clone the upstream repo if you haven't:
-   `git clone https://github.com/ralph-irving/jivelite.git`
-3. Study the original Lua file in `jivelite/share/jive/jive/` and the
-   corresponding C file in `jivelite/src/`
-4. Create the Python module in `jive/` following the existing patterns
-5. Add tests in `tests/`
-6. Run the full suite: `python -m pytest`
+Sordino is a hobby project and contributions are welcome!
+
+- **Bug reports** — Open an [issue](https://github.com/endegelaende/sordino/issues)
+  with steps to reproduce.
+- **Pull requests** — Fork the repo, create a branch, make your changes, and open a PR.
 
 ### Code Style
 
-- Python 3.10+ type hints throughout
-- `from __future__ import annotations` in every module
-- PEP 8 naming (`snake_case` methods), with `camelCase` aliases for Lua API
-  compatibility (e.g. `set_value()` + `setValue()`)
+- Python 3.10+ type hints throughout, `from __future__ import annotations` in every module
+- PEP 8 naming (`snake_case` methods), with `camelCase` aliases for Lua API compatibility
+  (e.g. `set_value()` + `setValue()`)
 - Docstrings on public classes and methods
+- mypy strict compliance required for all new code
+- `mypy jive/ --strict` must pass
+
+### Development Setup
+
+```bash
+git clone https://github.com/endegelaende/sordino.git
+cd sordino
+python -m venv .venv && .venv/bin/activate    # or .venv\Scripts\activate on Windows
+pip install pygame-ce>=2.5.0
+pip install -e ".[dev]"
+
+# Clone the upstream reference repo (for fonts, images, and Lua sources)
+cd .. && git clone https://github.com/ralph-irving/jivelite.git
+```
 
 ---
 
 ## License
 
-This project is a derivative of the original
-[Jivelite](https://github.com/ralph-irving/jivelite) codebase, which carries a
-**BSD 3-Clause** license:
+[BSD-3-Clause](LICENSE) — same as the original
+[JiveLite](https://github.com/ralph-irving/jivelite) project.
 
-> Copyright 2010, Logitech, Inc.  All rights reserved.
->
-> Copyright 2013-2014, Adrian Smith (triode1@btinternet).
+> Copyright © 2010, Logitech, Inc. All rights reserved.
+> Copyright © 2013–2014, Adrian Smith (triode1@btinternet).
+> Copyright © 2025, Sordino Contributors.
 
-See the [LICENSE file in the upstream repository](https://github.com/ralph-irving/jivelite/blob/master/LICENSE)
-for the full license text.
+See [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) for licenses of all
+dependencies, bundled fonts, and skin assets.
 
-The Python port follows the same BSD 3-Clause license.
+---
+
+## Acknowledgments
+
+A huge thank-you to the Squeezebox community — you keep this wonderful platform alive.
+
+- **[JiveLite](https://github.com/ralph-irving/jivelite)** by Ralph Irving — the
+  original C + Lua controller that Sordino is ported from
+- **[Lyrion Music Server](https://lyrion.org/)**
+  ([GitHub](https://github.com/LMS-Community/slimserver)) — the server that started it all
+- **[LMS Community Forums](https://forums.slimdevices.com/)** — for decades of keeping
+  Squeezebox alive
+- **[Resonance](https://github.com/endegelaende/resonance-server)** — modern
+  LMS-compatible music server, Sordino's server counterpart
+- **[pygame-ce](https://github.com/pygame-community/pygame-ce)** — the Community Edition
+  of pygame that makes the SDL2 rendering possible
+- **Logitech** — for creating the Squeezebox platform and open-sourcing the software
+- **Adrian Smith** — for maintaining JiveLite and keeping it running on modern systems
+- **GWENDESIGN / Felix Mueller** — for the grid layout code
+- **justblair** — for the Joggler skin
+
+If you have feedback, ideas, or run into bugs — please
+[open an issue](https://github.com/endegelaende/sordino/issues).
+Community input is what makes this project better.
+
+---
+
+<p align="center">
+  <strong>Resonance</strong> erzeugt den Klang. <strong>Sordino</strong> formt die Darstellung.
+</p>

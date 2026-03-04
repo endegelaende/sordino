@@ -35,6 +35,8 @@ License: BSD-3-Clause
 
 from __future__ import annotations
 
+from typing import Any
+
 __all__ = [
     "ArtworkCache",
     "LocalPlayer",
@@ -43,7 +45,7 @@ __all__ = [
 ]
 
 
-def __getattr__(name: str):
+def __getattr__(name: str) -> Any:
     """Lazy imports to avoid circular dependency issues."""
     if name == "ArtworkCache":
         from jive.slim.artwork_cache import ArtworkCache

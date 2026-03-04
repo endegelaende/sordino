@@ -1,0 +1,385 @@
+# ──────────────────────────────────────────────────────────────────────────────
+# Sordino — Release Workflow
+#
+# Triggered on version tags (v*). Builds wheels, sdist, and frozen executables
+# for Windows, Linux, and macOS, then publishes to PyPI via Trusted Publisher.
+#
+# Prerequisites:
+#   1. Configure PyPI Trusted Publisher for this repo:
+#      https://docs.pypi.org/trusted-publishers/adding-a-publisher/
+#   2. The jivelite repo assets must be bundled before building wheels.
+#      The workflow handles this automatically by checking out jivelite
+#      as a sibling and copying assets into jive/data/ inline.
+# ──────────────────────────────────────────────────────────────────────────────
+
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+  # Allow manual trigger for testing the workflow
+  workflow_dispatch:
+    inputs:
+      publish_pypi:
+        description: "Publish to PyPI (yes/no)"
+        required: false
+        default: "no"
+      publish_test_pypi:
+        description: "Publish to Test PyPI (yes/no)"
+        required: false
+        default: "no"
+
+permissions:
+  contents: write # needed for creating GitHub Releases
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: true
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Jobs
+# ──────────────────────────────────────────────────────────────────────────────
+
+jobs:
+  # ────────────────────────────────────────────────────────────────────────────
+  # 1. Build sdist + wheel (with bundled assets)
+  # ────────────────────────────────────────────────────────────────────────────
+  build-package:
+    name: Build sdist & wheel
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout sordino
+        uses: actions/checkout@v4
+        with:
+          path: sordino
+
+      - name: Checkout jivelite (for skin assets)
+        uses: actions/checkout@v4
+        with:
+          repository: ralph-irving/jivelite
+          path: jivelite
+          sparse-checkout: share/jive
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install build tools
+        run: python -m pip install --upgrade pip build setuptools wheel
+
+      - name: Bundle assets from jivelite
+        working-directory: sordino
+        run: |
+          set -euo pipefail
+          SRC="../jivelite/share/jive"
+          DEST="jive/data"
+          mkdir -p "$DEST"
+
+          echo "── Copying jivelite assets (fonts, jive, applets) ──"
+          cp -r "$SRC/fonts"   "$DEST/fonts"
+          cp -r "$SRC/jive"    "$DEST/jive"
+          cp -r "$SRC/applets" "$DEST/applets"
+
+          echo "── Merging local share/jive assets ──"
+          cp share/jive/fonts/*.ttf       "$DEST/fonts/" 2>/dev/null || true
+          cp share/jive/jive/*.png        "$DEST/jive/"  2>/dev/null || true
+          cp share/jive/jive/*.txt        "$DEST/jive/"  2>/dev/null || true
+
+          echo "── Asset bundle summary ──"
+          find "$DEST" -type f | wc -l
+          du -sh "$DEST/"
+
+      - name: Build sdist and wheel
+        working-directory: sordino
+        run: python -m build
+
+      - name: List dist contents
+        working-directory: sordino
+        run: ls -lh dist/
+
+      - name: Upload package artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: dist-package
+          path: sordino/dist/*
+          retention-days: 30
+
+  # ────────────────────────────────────────────────────────────────────────────
+  # 2. Build frozen executables (PyInstaller)
+  # ────────────────────────────────────────────────────────────────────────────
+  build-frozen:
+    name: "Freeze / ${{ matrix.os }}"
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            artifact_name: sordino-windows-x64
+            archive_ext: zip
+          - os: ubuntu-22.04
+            artifact_name: sordino-linux-x64
+            archive_ext: tar.gz
+          - os: macos-13
+            artifact_name: sordino-macos-x64
+            archive_ext: tar.gz
+          - os: macos-14
+            artifact_name: sordino-macos-arm64
+            archive_ext: tar.gz
+
+    steps:
+      - name: Checkout sordino
+        uses: actions/checkout@v4
+        with:
+          path: sordino
+
+      - name: Checkout jivelite (for skin assets)
+        uses: actions/checkout@v4
+        with:
+          repository: ralph-irving/jivelite
+          path: jivelite
+          sparse-checkout: share/jive
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      # Linux: install SDL2 development libraries
+      - name: Install SDL2 (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq \
+            libsdl2-dev libsdl2-image-dev libsdl2-mixer-dev libsdl2-ttf-dev
+
+      - name: Install dependencies
+        working-directory: sordino
+        run: |
+          python -m pip install --upgrade pip setuptools wheel
+          python -m pip install -e ".[freeze]"
+
+      - name: Bundle assets from jivelite
+        working-directory: sordino
+        shell: bash
+        run: |
+          set -euo pipefail
+          SRC="../jivelite/share/jive"
+          DEST="jive/data"
+          mkdir -p "$DEST"
+
+          echo "── Copying jivelite assets (fonts, jive, applets) ──"
+          cp -r "$SRC/fonts"   "$DEST/fonts"
+          cp -r "$SRC/jive"    "$DEST/jive"
+          cp -r "$SRC/applets" "$DEST/applets"
+
+          echo "── Merging local share/jive assets ──"
+          cp share/jive/fonts/*.ttf       "$DEST/fonts/" 2>/dev/null || true
+          cp share/jive/jive/*.png        "$DEST/jive/"  2>/dev/null || true
+          cp share/jive/jive/*.txt        "$DEST/jive/"  2>/dev/null || true
+
+          echo "── Asset bundle summary ──"
+          find "$DEST" -type f | wc -l
+          du -sh "$DEST/"
+
+      - name: Freeze with PyInstaller
+        working-directory: sordino
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m PyInstaller sordino.spec \
+            --distpath dist-frozen \
+            --noconfirm \
+            --clean
+
+          echo "── Frozen build contents ──"
+          ls -lhR dist-frozen/sordino/ | head -40
+
+      # ── Package the output ──────────────────────────────────────────
+
+      - name: Create archive (Windows)
+        if: runner.os == 'Windows'
+        working-directory: sordino
+        shell: pwsh
+        run: |
+          Compress-Archive -Path dist-frozen/sordino/* -DestinationPath dist-frozen/${{ matrix.artifact_name }}.zip
+
+      - name: Create archive (Unix)
+        if: runner.os != 'Windows'
+        working-directory: sordino
+        run: |
+          cd dist-frozen
+          tar czf ${{ matrix.artifact_name }}.tar.gz sordino/
+
+      - name: Upload frozen artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact_name }}
+          path: sordino/dist-frozen/*.${{ matrix.archive_ext }}
+          retention-days: 30
+
+  # ────────────────────────────────────────────────────────────────────────────
+  # 3. Publish to PyPI (only on tag push, using Trusted Publisher)
+  # ────────────────────────────────────────────────────────────────────────────
+  publish-pypi:
+    name: Publish to PyPI
+    needs: [build-package]
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/v') || github.event.inputs.publish_pypi == 'yes'
+
+    environment:
+      name: pypi
+      url: https://pypi.org/project/sordino/
+
+    permissions:
+      id-token: write # required for Trusted Publisher
+
+    steps:
+      - name: Download package artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: dist-package
+          path: dist/
+
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          print-hash: true
+
+  # ────────────────────────────────────────────────────────────────────────────
+  # 3b. Publish to Test PyPI (manual trigger only)
+  # ────────────────────────────────────────────────────────────────────────────
+  publish-test-pypi:
+    name: Publish to Test PyPI
+    needs: [build-package]
+    runs-on: ubuntu-latest
+    if: github.event.inputs.publish_test_pypi == 'yes'
+
+    environment:
+      name: test-pypi
+      url: https://test.pypi.org/project/sordino/
+
+    permissions:
+      id-token: write
+
+    steps:
+      - name: Download package artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: dist-package
+          path: dist/
+
+      - name: Publish to Test PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          repository-url: https://test.pypi.org/legacy/
+          print-hash: true
+
+  # ────────────────────────────────────────────────────────────────────────────
+  # 4. Create GitHub Release with frozen executables
+  # ────────────────────────────────────────────────────────────────────────────
+  github-release:
+    name: GitHub Release
+    needs: [build-package, build-frozen]
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/v')
+
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout (for changelog extraction)
+        uses: actions/checkout@v4
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: release-artifacts/
+
+      - name: List release artifacts
+        run: find release-artifacts/ -type f | sort
+
+      - name: Extract version from tag
+        id: version
+        run: echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+
+      - name: Generate release notes
+        id: notes
+        run: |
+          cat > release_notes.md << 'NOTES_EOF'
+          ## Sordino ${{ steps.version.outputs.version }}
+
+          ### Installation
+
+          **Via pip (recommended):**
+          ```
+          pip install sordino==${{ steps.version.outputs.version }}
+          ```
+
+          **Portable executables (no Python required):**
+          Download the archive for your platform below, extract, and run `sordino`.
+
+          | Platform | Archive |
+          |----------|---------|
+          | Windows x64 | `sordino-windows-x64.zip` |
+          | Linux x64 | `sordino-linux-x64.tar.gz` |
+          | macOS x64 (Intel) | `sordino-macos-x64.tar.gz` |
+          | macOS ARM64 (Apple Silicon) | `sordino-macos-arm64.tar.gz` |
+
+          ### Requirements
+
+          - A running [Resonance](https://github.com/endegelaende/resonance-server) or [Lyrion Music Server](https://lyrion.org/) instance on your network.
+          - For the pip install: Python 3.10+ and pygame-ce (installed automatically).
+          - For the portable executables: no additional dependencies needed.
+
+          ### Changelog
+
+          See [CHANGELOG.md](https://github.com/endegelaende/sordino/blob/main/CHANGELOG.md) for details.
+          NOTES_EOF
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: "Sordino v${{ steps.version.outputs.version }}"
+          body_path: release_notes.md
+          draft: false
+          prerelease: ${{ contains(github.ref_name, '-rc') || contains(github.ref_name, '-beta') || contains(github.ref_name, '-alpha') }}
+          files: |
+            release-artifacts/dist-package/*
+            release-artifacts/sordino-windows-x64/*.zip
+            release-artifacts/sordino-linux-x64/*.tar.gz
+            release-artifacts/sordino-macos-x64/*.tar.gz
+            release-artifacts/sordino-macos-arm64/*.tar.gz
+          fail_on_unmatched_files: false
+
+  # ────────────────────────────────────────────────────────────────────────────
+  # 5. Summary gate — single status check for branch protection
+  # ────────────────────────────────────────────────────────────────────────────
+  release-complete:
+    name: Release complete
+    needs: [build-package, build-frozen, publish-pypi, github-release]
+    runs-on: ubuntu-latest
+    if: always()
+
+    steps:
+      - name: Check results
+        run: |
+          echo "build-package: ${{ needs.build-package.result }}"
+          echo "build-frozen:  ${{ needs.build-frozen.result }}"
+          echo "publish-pypi:  ${{ needs.publish-pypi.result }}"
+          echo "github-release: ${{ needs.github-release.result }}"
+
+          if [ "${{ needs.build-package.result }}" != "success" ]; then
+            echo "::error::Package build failed."
+            exit 1
+          fi
+
+          if [ "${{ needs.build-frozen.result }}" != "success" ]; then
+            echo "::warning::Some frozen builds failed (non-blocking)."
+          fi
+
+          echo "Release pipeline completed."

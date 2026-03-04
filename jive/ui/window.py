@@ -24,7 +24,7 @@ Transitions
 
 Transition functions have the signature::
 
-    def transition(old_window, new_window) -> Optional[Callable]:
+    def transition(old_window, new_window) -> Optional[Callable[..., Any]]:
         ...
 
 They return a per-frame callable ``fn(widget, surface)`` that is called
@@ -132,6 +132,52 @@ class Window(Widget):
     * Per-window skin override
     """
 
+    # Class-level transition factory aliases (Lua compatibility).
+    # These are set at the bottom of this module once the free functions
+    # are defined.  Applets use e.g. ``Window.transitionFadeIn``.
+    transitionNone: Optional[Callable[..., Any]] = None
+    transitionFadeIn: Optional[Callable[..., Any]] = None
+    transitionFadeInFast: Optional[Callable[..., Any]] = None
+    transitionPushLeft: Optional[Callable[..., Any]] = None
+    transitionPushRight: Optional[Callable[..., Any]] = None
+    transitionPushPopupUp: Optional[Callable[..., Any]] = None
+    transitionPushPopupDown: Optional[Callable[..., Any]] = None
+
+    __slots__ = (
+        "allow_screensaver",
+        "always_on_top",
+        "auto_hide",
+        "show_framework_widgets",
+        "transparent",
+        "transient",
+        "context_menu",
+        "is_screensaver",
+        "allow_powersave",
+        "window_id",
+        "widgets",
+        "z_widgets",
+        "layout_root",
+        "focus",
+        "title_widget",
+        "skin_dict",
+        "_bg_tile",
+        "_mask_tile",
+        "_skin_layout",
+        "_DEFAULT_SHOW_TRANSITION",
+        "_DEFAULT_HIDE_TRANSITION",
+        "_mouse_event_focus_widget",
+        "_default_action_handles",
+        "_ignore_all_input_handle",
+        "_hide_on_all_button_handle",
+        "_briefly_handler",
+        "_briefly_timer",
+        "_bg",
+        "_title_text",
+        "_title_style",
+        "_button_actions",
+        "_isChooseMusicSourceWindow",
+    )
+
     def __init__(
         self,
         style: str,
@@ -226,11 +272,61 @@ class Window(Widget):
     # ==================================================================
 
     def set_title(self, title: str, title_style: Optional[str] = None) -> None:
-        """Set or update the window title text."""
-        # Store as simple string for now; full Group/Label title will be
-        # implemented when Group and Label are ported (M3).
+        """Set or update the window title text.
+
+        Creates a ``Group("title", {text: Label})`` widget hierarchy
+        matching the Lua ``Window:setTitle()`` behaviour.
+        """
+        from jive.ui.icon import Icon
+        from jive.ui.label import Label
+
+        if self.title_widget is not None:
+            # Title Group already exists — just update the text
+            self.title_widget.set_widget_value("text", title)
+        else:
+            # First call — create the title Group with a Label
+            self.set_icon_widget("text", Label("text", title))
+
+        # If a title icon style was provided, set the icon widget
+        if title_style is not None:
+            self.set_icon_widget("icon", Icon(title_style))
+
         self._title_text = title
         self._title_style = title_style
+
+    def set_icon_widget(self, widget_key: str, widget: Widget) -> None:
+        """Add or replace a named widget inside the title Group.
+
+        Mirrors Lua ``Window:setIconWidget(widgetKey, widget)``.
+        Creates the title Group on first call.
+        """
+        from jive.ui.group import Group
+
+        if self.title_widget is None:
+            self.set_title_widget(Group("title", {}))
+
+        self.title_widget.set_widget(widget_key, widget)  # type: ignore[union-attr]
+
+    def get_icon_widget(self, widget_key: str) -> Optional[Widget]:
+        """Return a named widget from the title Group, or ``None``."""
+        if self.title_widget is None:
+            return None
+        return self.title_widget.get_widget(widget_key)  # type: ignore[union-attr]
+
+    def set_title_widget(self, title_widget: Widget) -> None:
+        """Replace the entire title widget (Group).
+
+        Mirrors Lua ``Window:setTitleWidget(titleWidget)``.
+        """
+        from jive.ui.event import Event as EventCls
+
+        if self.title_widget is not None:
+            self.title_widget._event(EventCls(int(EVENT_FOCUS_LOST)))
+            self.remove_widget(self.title_widget)
+
+        self.title_widget = title_widget
+        self._add_widget(self.title_widget)
+        self.title_widget._event(EventCls(int(EVENT_FOCUS_GAINED)))
 
     def get_title(self) -> Optional[str]:
         """Return the title text, or ``None``."""
@@ -244,7 +340,7 @@ class Window(Widget):
     # Show / hide  (window-stack integration)
     # ==================================================================
 
-    def show(self, transition: Optional[Callable] = None) -> None:
+    def show(self, transition: Optional[Callable[..., Any]] = None) -> None:
         """
         Show this window, pushing it onto the window stack.
 
@@ -257,7 +353,7 @@ class Window(Widget):
 
         # Find insertion index (skip always-on-top windows)
         idx = 0
-        while idx < len(stack) and stack[idx].always_on_top:
+        while idx < len(stack) and stack[idx].always_on_top:  # type: ignore[attr-defined]
             idx += 1
 
         top_window = stack[idx] if idx < len(stack) else None
@@ -284,7 +380,7 @@ class Window(Widget):
             # Start transition
             trans = transition or self._DEFAULT_SHOW_TRANSITION
             if trans is not None:
-                fn = _new_transition(trans, top_window, self)
+                fn = _new_transition(trans, top_window, self)  # type: ignore[arg-type]
                 if fn is not None:
                     fw._start_transition(fn)
 
@@ -301,11 +397,11 @@ class Window(Widget):
 
         # Auto-hide windows below
         while idx + 1 < len(stack) and getattr(stack[idx + 1], "auto_hide", False):
-            stack[idx + 1].hide()  # type: ignore[union-attr]
+            stack[idx + 1].hide()
 
         fw.re_draw(None)
 
-    def show_instead(self, transition: Optional[Callable] = None) -> None:
+    def show_instead(self, transition: Optional[Callable[..., Any]] = None) -> None:
         """
         Show this window as a replacement for the current top window.
         """
@@ -313,17 +409,90 @@ class Window(Widget):
 
         stack = fw.window_stack
         idx = 0
-        while idx < len(stack) and stack[idx].always_on_top:
+        while idx < len(stack) and stack[idx].always_on_top:  # type: ignore[attr-defined]
             idx += 1
         top_window = stack[idx] if idx < len(stack) else None
 
         self.show(transition)
         if top_window is not None and hasattr(top_window, "hide"):
-            top_window.hide()  # type: ignore[union-attr]
+            top_window.hide()
+
+    def replace(
+        self,
+        to_replace: "Window",
+        transition: Optional[Callable[..., Any]] = None,
+    ) -> None:
+        """
+        Replace *to_replace* in the window stack with this window.
+
+        If *to_replace* is the current top window, delegates to
+        ``show_instead(transition)``.  Otherwise the replacement happens
+        in-place within the stack — dispatching the appropriate
+        WINDOW_PUSH / WINDOW_POP / SHOW / HIDE events.
+
+        Mirrors Lua ``Window:replace(toReplace, transition)``.
+        """
+        from jive.ui.framework import framework as fw
+
+        stack = fw.window_stack
+
+        # Find the first non-always-on-top index (logical top)
+        top_idx = 0
+        while top_idx < len(stack) and stack[top_idx].always_on_top:  # type: ignore[attr-defined]
+            top_idx += 1
+
+        for i in range(len(stack)):
+            if stack[i] is to_replace:
+                if i == top_idx:
+                    # Replacing the top window — use show_instead which
+                    # handles transitions and event dispatch properly.
+                    self.show_instead(transition)
+                else:
+                    # Replacing a window deeper in the stack.
+                    old_window: Window = stack[i]  # type: ignore[assignment]
+
+                    # Capture visibility before dispatching HIDE
+                    # (EVENT_HIDE clears the visible flag).
+                    was_visible = old_window.visible
+
+                    # If the old window was visible (e.g. under a
+                    # transparent window), hide it.
+                    if was_visible:
+                        old_window.dispatch_new_event(int(EVENT_HIDE))
+
+                    # The old window is being removed from the stack.
+                    old_window.dispatch_new_event(int(EVENT_WINDOW_POP))
+
+                    # Remove self from the stack if already present.
+                    on_stack = self in stack
+                    if on_stack:
+                        stack.remove(self)
+                        # Recalculate i since the list may have shifted.
+                        try:
+                            i = stack.index(to_replace)
+                        except ValueError:
+                            # to_replace was already removed (shouldn't
+                            # happen but be safe).
+                            return
+
+                    if not on_stack:
+                        # This window is being pushed to the stack.
+                        self.dispatch_new_event(int(EVENT_WINDOW_PUSH))
+
+                    # Swap in-place.
+                    stack[i] = self
+
+                    # If the old window was visible, the new one is now
+                    # visible too.
+                    if was_visible:
+                        self.dispatch_new_event(int(EVENT_SHOW))
+
+                    fw.re_draw(None)
+                return  # found and handled
 
     def hide(
         self,
-        transition: Optional[Callable] = None,
+        transition: Optional[Callable[..., Any]] = None,
         sound: Optional[str] = None,
     ) -> None:
         """
@@ -342,7 +511,7 @@ class Window(Widget):
 
         # Find new top window (skip always-on-top)
         idx = 0
-        while idx < len(stack) and stack[idx].always_on_top:
+        while idx < len(stack) and stack[idx].always_on_top:  # type: ignore[attr-defined]
             idx += 1
         top_window = stack[idx] if idx < len(stack) else None
 
@@ -358,12 +527,13 @@ class Window(Widget):
                     else None
                 )
 
-            top_window.re_draw()  # type: ignore[union-attr]
+            top_window.re_layout()
+            top_window.re_draw()
 
             # Transition
             trans = transition or self._DEFAULT_HIDE_TRANSITION
             if trans is not None:
-                fn = _new_transition(trans, self, top_window)
+                fn = _new_transition(trans, self, top_window)  # type: ignore[arg-type]
                 if fn is not None:
                     fw._start_transition(fn)
 
@@ -376,9 +546,9 @@ class Window(Widget):
     def show_briefly(
         self,
         msecs: Optional[int] = None,
-        callback: Optional[Callable] = None,
-        push_transition: Optional[Callable] = None,
-        pop_transition: Optional[Callable] = None,
+        callback: Optional[Callable[..., Any]] = None,
+        push_transition: Optional[Callable[..., Any]] = None,
+        pop_transition: Optional[Callable[..., Any]] = None,
     ) -> None:
         """
         Show this window briefly for *msecs* milliseconds.
@@ -404,7 +574,7 @@ class Window(Widget):
             return
 
         if callback is not None:
-            self.add_listener([int(EVENT_WINDOW_POP), callback])
+            self.add_listener([int(EVENT_WINDOW_POP), callback])  # type: ignore[call-arg, arg-type]
 
         if self._briefly_handler is None:
 
@@ -437,9 +607,9 @@ class Window(Widget):
 
         for w in list(reversed(fw.window_stack)):
             if hasattr(w, "hide"):
-                w.hide()  # type: ignore[union-attr]
+                w.hide()
 
-    def hide_to_top(self, transition: Optional[Callable] = None) -> None:
+    def hide_to_top(self, transition: Optional[Callable[..., Any]] = None) -> None:
         """Hide from this window to the top of the stack."""
         from jive.ui.framework import framework as fw
 
@@ -448,10 +618,10 @@ class Window(Widget):
             if w is self:
                 for j in range(i, -1, -1):
                     if hasattr(stack[j], "hide"):
-                        stack[j].hide(transition)  # type: ignore[union-attr]
+                        stack[j].hide(transition)
                 break
 
-    def move_to_top(self, transition: Optional[Callable] = None) -> None:
+    def move_to_top(self, transition: Optional[Callable[..., Any]] = None) -> None:
         """Move this window to the top of the stack."""
         from jive.ui.framework import framework as fw
 
@@ -489,9 +659,17 @@ class Window(Widget):
         Add *widget* as a child of this window.
 
         The widget is given focus by default (matching Lua behaviour).
+        If *widget* is a Button wrapper, the inner widget is unwrapped
+        automatically (Button is not a Widget subclass in Python).
         """
+        # Unwrap Button wrapper — in Lua Button inherits Widget, in
+        # Python it is a standalone wrapper with a .widget attribute.
         if not isinstance(widget, Widget):
-            raise TypeError("add_widget requires a Widget instance")
+            inner = getattr(widget, "widget", None)
+            if inner is not None and isinstance(inner, Widget):
+                widget = inner
+            else:
+                raise TypeError("add_widget requires a Widget instance")
 
         if widget.parent is not None:
             log.warn(
@@ -554,7 +732,7 @@ class Window(Widget):
     # Iteration (z-ordered)
     # ==================================================================
 
-    def iterate(
+    def iterate(  # type: ignore[override]
         self,
         closure: Callable[[Widget], Optional[int]],
         include_hidden: bool = False,
@@ -579,6 +757,14 @@ class Window(Widget):
     # Skin
     # ==================================================================
 
+    def re_skin(self) -> None:
+        """Reset all window-specific cached skin state, then call super."""
+        self._bg_tile = None
+        self._mask_tile = None
+        self._bg = None
+        self._skin_layout = None
+        super().re_skin()
+
     def _skin(self) -> None:
         """
         Apply skin properties to this window.
@@ -589,11 +775,7 @@ class Window(Widget):
         from jive.ui.style import style_rawvalue, style_tile
 
         # Invalidate style path cache
-        if hasattr(self, "_style_path"):
-            try:
-                del self._style_path  # type: ignore[attr-defined]
-            except AttributeError:
-                pass
+        self._style_path = None
 
         # Pack (read border/padding from style)
         self._widget_pack()
@@ -636,8 +818,8 @@ class Window(Widget):
                         gw._stable_sort_index = stable_counter  # type: ignore[attr-defined]
                         self.z_widgets.append(gw)
                         stable_counter += 1
-            except (ImportError, AttributeError):
-                pass
+            except (ImportError, AttributeError) as exc:
+                log.debug("import fallback: %s", exc)
 
         # Window's own children
         for widget in self.widgets:
@@ -694,7 +876,7 @@ class Window(Widget):
         for widget in self.z_widgets:
             if widget.is_hidden():
                 continue
-            widget.draw(surface, layer)
+            widget.draw(surface, layer)  # type: ignore[call-arg]
 
     # ==================================================================
     # Event handling
@@ -744,8 +926,8 @@ class Window(Widget):
 
                     for gw in fw.get_widgets():
                         gw.parent = self
-                except (ImportError, AttributeError):
-                    pass
+                except (ImportError, AttributeError) as exc:
+                    log.debug("import fallback: %s", exc)
             return int(EVENT_UNUSED)
 
         # ---- Show / hide → forward to children ----
@@ -763,8 +945,8 @@ class Window(Widget):
 
             for gw in fw.get_widgets():
                 r |= gw._event(event)
-        except (ImportError, AttributeError):
-            pass
+        except (ImportError, AttributeError) as exc:
+            log.debug("import fallback: %s", exc)
 
         # Child widgets
         for widget in self.widgets:
@@ -845,8 +1027,8 @@ class Window(Widget):
 
             for gw in fw.get_widgets():
                 gw.check_layout()
-        except (ImportError, AttributeError):
-            pass
+        except (ImportError, AttributeError) as exc:
+            log.debug("import fallback: %s", exc)
 
     # ==================================================================
     # Per-window skin
@@ -935,7 +1117,7 @@ class Window(Widget):
     def ignore_all_input_except(
         self,
         excluded_actions: Optional[List[str]] = None,
-        ignored_callback: Optional[Callable] = None,
+        ignored_callback: Optional[Callable[..., Any]] = None,
     ) -> None:
         """
         Consume all input events except for the named actions in
@@ -966,7 +1148,7 @@ class Window(Widget):
         self,
         event: Event,
         excluded_actions: Optional[List[str]],
-        ignored_callback: Optional[Callable],
+        ignored_callback: Optional[Callable[..., Any]],
     ) -> int:
         from jive.ui.framework import framework as fw
 
@@ -990,7 +1172,7 @@ class Window(Widget):
 
         from jive.ui.event import Event as EventCls
 
-        action_event = EventCls(int(ACTION), action=action_name)
+        action_event = EventCls(int(ACTION), action=action_name)  # type: ignore[call-arg]
         return self._ignore_all_input_listener(
             action_event, excluded_actions, ignored_callback
         )
@@ -1079,6 +1261,11 @@ class Window(Widget):
         def _measure(widget: Widget) -> Optional[int]:
             nonlocal max_n, max_e, max_s, max_w, max_x, max_y
 
+            # Ensure child is skinned so preferred_bounds are populated.
+            # In the C original this happens via dirty-flag propagation
+            # across multiple frames; here we do it eagerly.
+            widget.check_skin()
+
             x, y, w, h = widget.get_preferred_bounds()
             lb, tb, rb, bb = widget.get_border()
             position = _style_int(widget, "position", int(LAYOUT_CENTER))
@@ -1120,7 +1307,7 @@ class Window(Widget):
 
             return None
 
-        self.iterate(_measure, include_hidden=True)
+        self.iterate(_measure)
 
         # Adjust window bounds to fit content
         if fit_window:
@@ -1215,7 +1402,7 @@ class Window(Widget):
 
             return None
 
-        self.iterate(_place, include_hidden=True)
+        self.iterate(_place)
 
         # Set window bounds
         self.set_bounds(wx, wy, ww, wh)
@@ -1365,10 +1552,10 @@ class Window(Widget):
 
 
 def _new_transition(
-    transition_factory: Callable,
+    transition_factory: Callable[..., Any],
     old_window: Window,
     new_window: Window,
-) -> Optional[Callable]:
+) -> Optional[Callable[..., Any]]:
     """
     Create a transition, wrapping it to handle transparent windows on
     top of the stack (e.g. popups).
@@ -1404,7 +1591,7 @@ def _new_transition(
                 tw.draw(surface, int(LAYER_CONTENT))
 
         return _wrapped
-    return fn
+    return fn  # type: ignore[no-any-return]
 
 
 # ======================================================================
@@ -1422,7 +1609,7 @@ def transition_none(old_window: Window, new_window: Window) -> None:
 # ======================================================================
 
 
-def _transition_bump_left(window: Window) -> Optional[Callable]:
+def _transition_bump_left(window: Window) -> Optional[Callable[..., Any]]:
     frames = [2]
 
     def _step(widget: Any, surface: Surface) -> None:
@@ -1450,7 +1637,7 @@ def _transition_bump_left(window: Window) -> Optional[Callable]:
     return _step
 
 
-def _transition_bump_right(window: Window) -> Optional[Callable]:
+def _transition_bump_right(window: Window) -> Optional[Callable[..., Any]]:
     frames = [2]
 
     def _step(widget: Any, surface: Surface) -> None:
@@ -1478,7 +1665,7 @@ def _transition_bump_right(window: Window) -> Optional[Callable]:
     return _step
 
 
-def _transition_bump_up(window: Window) -> Optional[Callable]:
+def _transition_bump_up(window: Window) -> Optional[Callable[..., Any]]:
     frames = [1]
     in_return = [False]
 
@@ -1509,7 +1696,7 @@ def _transition_bump_up(window: Window) -> Optional[Callable]:
     return _step
 
 
-def _transition_bump_down(window: Window) -> Optional[Callable]:
+def _transition_bump_down(window: Window) -> Optional[Callable[..., Any]]:
     frames = [1]
     in_return = [False]
 
@@ -1545,7 +1732,9 @@ def _transition_bump_down(window: Window) -> Optional[Callable]:
 # ======================================================================
 
 
-def transition_push_left(old_window: Window, new_window: Window) -> Optional[Callable]:
+def transition_push_left(
+    old_window: Window, new_window: Window
+) -> Optional[Callable[..., Any]]:
     """
     Horizontal push-left transition (new window slides in from right).
     """
@@ -1554,7 +1743,7 @@ def transition_push_left(old_window: Window, new_window: Window) -> Optional[Cal
 
 def transition_push_left_static_title(
     old_window: Window, new_window: Window
-) -> Optional[Callable]:
+) -> Optional[Callable[..., Any]]:
     """Push left with static title bar."""
     return _transition_push_left_impl(old_window, new_window, True)
 
@@ -1563,71 +1752,106 @@ def _transition_push_left_impl(
     old_window: Window,
     new_window: Window,
     static_title: bool,
-) -> Optional[Callable]:
+) -> Optional[Callable[..., Any]]:
     from jive.ui.framework import framework as fw
 
     duration = _HORIZONTAL_PUSH_DURATION
     remaining = [duration]
-    screen_width = fw.get_screen_size()[0]
+    screen_width, screen_height = fw.get_screen_size()
     scale = (duration * duration * duration) / max(screen_width, 1)
     start_t = [0]
     count = [0]
 
+    # Snapshot surfaces — captured on first frame, then only these
+    # pre-rendered images are blitted with offsets during animation.
+    # This avoids 4-5 full window draw() calls per frame.
+    import pygame as _pg
+
+    snap_old: list[Optional[_pg.Surface]] = [None]
+    snap_new: list[Optional[_pg.Surface]] = [None]
+
+    def _capture_snapshots(surface: Surface) -> None:
+        """Render both windows once into offscreen surfaces."""
+        from jive.ui.surface import Surface as SurfaceWrap
+
+        bg = fw.get_background()
+
+        # --- old window snapshot ---
+        old_srf = _pg.Surface((screen_width, screen_height))
+        old_srf.fill((0, 0, 0))
+        old_wrap = SurfaceWrap(old_srf)
+        if bg is not None:
+            try:
+                bg.blit(old_wrap, 0, 0, screen_width, screen_height)
+            except Exception:
+                pass
+        old_window.check_layout()
+        old_window.draw(old_wrap, int(LAYER_ALL))
+        snap_old[0] = old_srf
+
+        # --- new window snapshot ---
+        new_srf = _pg.Surface((screen_width, screen_height))
+        new_srf.fill((0, 0, 0))
+        new_wrap = SurfaceWrap(new_srf)
+        if bg is not None:
+            try:
+                bg.blit(new_wrap, 0, 0, screen_width, screen_height)
+            except Exception:
+                pass
+        new_window.check_layout()
+        new_window.draw(new_wrap, int(LAYER_ALL))
+        snap_new[0] = new_srf
+
     def _step(widget: Any, surface: Surface) -> None:
         if count[0] == 0:
             start_t[0] = fw.get_ticks()
+            _capture_snapshots(surface)
         count[0] += 1
+
+        elapsed = fw.get_ticks() - start_t[0]
+        remaining[0] = duration - elapsed
+
+        # Safety: kill transition if stuck (> 2x duration or > 300 frames)
+        if count[0] > 300 or elapsed > duration * 2:
+            surface.set_offset(0, 0)
+            if snap_new[0] is not None:
+                surface.pg.blit(snap_new[0], (0, 0))
+            else:
+                new_window.draw(surface, int(LAYER_ALL))
+            fw._kill_transition()
+            return
 
         x = math.ceil(
             screen_width - (remaining[0] * remaining[0] * remaining[0]) / scale
         )
 
-        surface.set_offset(0, 0)
-        if hasattr(old_window, "_bg") and old_window._bg is not None:
-            old_window._bg.blit(surface, 0, 0)
-
-        if static_title:
-            new_window.draw(surface, int(LAYER_LOWER) | int(LAYER_TITLE))
-        else:
-            new_window.draw(surface, int(LAYER_LOWER))
-
-        surface.set_offset(-x, 0)
-        if static_title:
-            old_window.draw(
-                surface,
-                int(LAYER_CONTENT) | int(LAYER_CONTENT_OFF_STAGE),
-            )
-        else:
-            old_window.draw(
-                surface,
-                int(LAYER_CONTENT) | int(LAYER_CONTENT_OFF_STAGE) | int(LAYER_TITLE),
-            )
-
-        surface.set_offset(screen_width - x, 0)
-        if static_title:
-            new_window.draw(
-                surface,
-                int(LAYER_CONTENT) | int(LAYER_CONTENT_ON_STAGE),
-            )
-        else:
-            new_window.draw(
-                surface,
-                int(LAYER_CONTENT) | int(LAYER_CONTENT_ON_STAGE) | int(LAYER_TITLE),
-            )
-
-        surface.set_offset(0, 0)
-        new_window.draw(surface, int(LAYER_FRAME))
-
-        elapsed = fw.get_ticks() - start_t[0]
-        remaining[0] = duration - elapsed
+        # Blit pre-rendered snapshots with horizontal offsets.
+        # Old window slides left, new window slides in from right.
+        dst = surface.pg
+        if snap_old[0] is not None:
+            dst.blit(snap_old[0], (-x, 0))
+        if snap_new[0] is not None:
+            dst.blit(snap_new[0], (screen_width - x, 0))
 
         if remaining[0] <= 0 or x >= screen_width:
+            # Final frame: blit new window at origin to ensure
+            # pixel-perfect result with no offset artifacts.
+            surface.set_offset(0, 0)
+            if snap_new[0] is not None:
+                surface.pg.blit(snap_new[0], (0, 0))
+            else:
+                new_window.draw(surface, int(LAYER_ALL))
+            # Release snapshot memory
+            snap_old[0] = None
+            snap_new[0] = None
             fw._kill_transition()
 
     return _step
 
 
-def transition_push_right(old_window: Window, new_window: Window) -> Optional[Callable]:
+def transition_push_right(
+    old_window: Window, new_window: Window
+) -> Optional[Callable[..., Any]]:
     """
     Horizontal push-right transition (new window slides in from left).
     """
@@ -1636,7 +1860,7 @@ def transition_push_right(old_window: Window, new_window: Window) -> Optional[Ca
 
 def transition_push_right_static_title(
     old_window: Window, new_window: Window
-) -> Optional[Callable]:
+) -> Optional[Callable[..., Any]]:
     """Push right with static title bar."""
     return _transition_push_right_impl(old_window, new_window, True)
 
@@ -1645,65 +1869,97 @@ def _transition_push_right_impl(
     old_window: Window,
     new_window: Window,
     static_title: bool,
-) -> Optional[Callable]:
+) -> Optional[Callable[..., Any]]:
     from jive.ui.framework import framework as fw
 
     duration = _HORIZONTAL_PUSH_DURATION
     remaining = [duration]
-    screen_width = fw.get_screen_size()[0]
+    screen_width, screen_height = fw.get_screen_size()
     scale = (duration * duration * duration) / max(screen_width, 1)
     start_t = [0]
     count = [0]
 
+    # Snapshot surfaces — captured on first frame, then only these
+    # pre-rendered images are blitted with offsets during animation.
+    import pygame as _pg
+
+    snap_old: list[Optional[_pg.Surface]] = [None]
+    snap_new: list[Optional[_pg.Surface]] = [None]
+
+    def _capture_snapshots(surface: Surface) -> None:
+        """Render both windows once into offscreen surfaces."""
+        from jive.ui.surface import Surface as SurfaceWrap
+
+        bg = fw.get_background()
+
+        # --- old window snapshot ---
+        old_srf = _pg.Surface((screen_width, screen_height))
+        old_srf.fill((0, 0, 0))
+        old_wrap = SurfaceWrap(old_srf)
+        if bg is not None:
+            try:
+                bg.blit(old_wrap, 0, 0, screen_width, screen_height)
+            except Exception:
+                pass
+        old_window.check_layout()
+        old_window.draw(old_wrap, int(LAYER_ALL))
+        snap_old[0] = old_srf
+
+        # --- new window snapshot ---
+        new_srf = _pg.Surface((screen_width, screen_height))
+        new_srf.fill((0, 0, 0))
+        new_wrap = SurfaceWrap(new_srf)
+        if bg is not None:
+            try:
+                bg.blit(new_wrap, 0, 0, screen_width, screen_height)
+            except Exception:
+                pass
+        new_window.check_layout()
+        new_window.draw(new_wrap, int(LAYER_ALL))
+        snap_new[0] = new_srf
+
     def _step(widget: Any, surface: Surface) -> None:
         if count[0] == 0:
             start_t[0] = fw.get_ticks()
+            _capture_snapshots(surface)
         count[0] += 1
+
+        elapsed = fw.get_ticks() - start_t[0]
+        remaining[0] = duration - elapsed
+
+        # Safety: kill transition if stuck (> 2x duration or > 300 frames)
+        if count[0] > 300 or elapsed > duration * 2:
+            surface.set_offset(0, 0)
+            if snap_new[0] is not None:
+                surface.pg.blit(snap_new[0], (0, 0))
+            else:
+                new_window.draw(surface, int(LAYER_ALL))
+            fw._kill_transition()
+            return
 
         x = math.ceil(
             screen_width - (remaining[0] * remaining[0] * remaining[0]) / scale
         )
 
-        surface.set_offset(0, 0)
-        if hasattr(old_window, "_bg") and old_window._bg is not None:
-            old_window._bg.blit(surface, 0, 0)
-
-        if static_title:
-            new_window.draw(surface, int(LAYER_LOWER) | int(LAYER_TITLE))
-        else:
-            new_window.draw(surface, int(LAYER_LOWER))
-
-        surface.set_offset(x, 0)
-        if static_title:
-            old_window.draw(
-                surface,
-                int(LAYER_CONTENT) | int(LAYER_CONTENT_OFF_STAGE),
-            )
-        else:
-            old_window.draw(
-                surface,
-                int(LAYER_CONTENT) | int(LAYER_CONTENT_OFF_STAGE) | int(LAYER_TITLE),
-            )
-
-        surface.set_offset(x - screen_width, 0)
-        if static_title:
-            new_window.draw(
-                surface,
-                int(LAYER_CONTENT) | int(LAYER_CONTENT_ON_STAGE),
-            )
-        else:
-            new_window.draw(
-                surface,
-                int(LAYER_CONTENT) | int(LAYER_CONTENT_ON_STAGE) | int(LAYER_TITLE),
-            )
-
-        surface.set_offset(0, 0)
-        new_window.draw(surface, int(LAYER_FRAME))
-
-        elapsed = fw.get_ticks() - start_t[0]
-        remaining[0] = duration - elapsed
+        # Blit pre-rendered snapshots with horizontal offsets.
+        # Old window slides right, new window slides in from left.
+        dst = surface.pg
+        if snap_old[0] is not None:
+            dst.blit(snap_old[0], (x, 0))
+        if snap_new[0] is not None:
+            dst.blit(snap_new[0], (x - screen_width, 0))
 
         if remaining[0] <= 0 or x >= screen_width:
+            # Final frame: blit new window at origin to ensure
+            # pixel-perfect result with no offset artifacts.
+            surface.set_offset(0, 0)
+            if snap_new[0] is not None:
+                surface.pg.blit(snap_new[0], (0, 0))
+            else:
+                new_window.draw(surface, int(LAYER_ALL))
+            # Release snapshot memory
+            snap_old[0] = None
+            snap_new[0] = None
             fw._kill_transition()
 
     return _step
@@ -1714,14 +1970,16 @@ def _transition_push_right_impl(
 # ======================================================================
 
 
-def transition_fade_in(old_window: Window, new_window: Window) -> Optional[Callable]:
+def transition_fade_in(
+    old_window: Window, new_window: Window
+) -> Optional[Callable[..., Any]]:
     """Fade-in transition (400ms)."""
     return _transition_fade_in_impl(old_window, new_window, 400)
 
 
 def transition_fade_in_fast(
     old_window: Window, new_window: Window
-) -> Optional[Callable]:
+) -> Optional[Callable[..., Any]]:
     """Fast fade-in transition (100ms)."""
     return _transition_fade_in_impl(old_window, new_window, 100)
 
@@ -1730,7 +1988,7 @@ def _transition_fade_in_impl(
     old_window: Window,
     new_window: Window,
     duration: int,
-) -> Optional[Callable]:
+) -> Optional[Callable[..., Any]]:
     from jive.ui.framework import framework as fw
     from jive.ui.surface import Surface
 
@@ -1747,8 +2005,8 @@ def _transition_fade_in_impl(
     if bg is not None:
         try:
             bg.blit(srf, 0, 0, sw, sh)
-        except Exception:
-            pass
+        except Exception as exc:
+            log.warning("background blit failed: %s", exc)
     old_window.draw(srf, int(LAYER_ALL))
 
     def _step(widget: Any, surface: Surface) -> None:
@@ -1780,7 +2038,7 @@ def _transition_fade_in_impl(
 
 def transition_push_popup_up(
     old_window: Window, new_window: Window
-) -> Optional[Callable]:
+) -> Optional[Callable[..., Any]]:
     """Push-up transition for popup windows."""
     from jive.ui.framework import framework as fw
 
@@ -1814,7 +2072,7 @@ def transition_push_popup_up(
 
 def transition_push_popup_down(
     old_window: Window, new_window: Window
-) -> Optional[Callable]:
+) -> Optional[Callable[..., Any]]:
     """Push-down transition for popup windows."""
     from jive.ui.framework import framework as fw
 
@@ -1844,3 +2102,53 @@ def transition_push_popup_down(
             fw._kill_transition()
 
     return _step
+
+
+# ======================================================================
+# Lua-compatible class-level transition aliases & method aliases
+# ======================================================================
+
+Window.transitionNone = staticmethod(transition_none)
+Window.transitionFadeIn = staticmethod(transition_fade_in)
+Window.transitionFadeInFast = staticmethod(transition_fade_in_fast)
+Window.transitionPushLeft = staticmethod(transition_push_left)
+Window.transitionPushRight = staticmethod(transition_push_right)
+Window.transitionPushPopupUp = staticmethod(transition_push_popup_up)
+Window.transitionPushPopupDown = staticmethod(transition_push_popup_down)
+
+# snake_case → camelCase method aliases
+Window.showInstead = Window.show_instead  # type: ignore[attr-defined]
+Window.showBriefly = Window.show_briefly  # type: ignore[attr-defined]
+Window.hideAll = Window.hide_all  # type: ignore[attr-defined]
+Window.hideToTop = Window.hide_to_top  # type: ignore[attr-defined]
+Window.moveToTop = Window.move_to_top  # type: ignore[attr-defined]
+Window.addWidget = Window.add_widget  # type: ignore[attr-defined]
+Window.removeWidget = Window.remove_widget  # type: ignore[attr-defined]
+Window.focusWidget = Window.focus_widget  # type: ignore[attr-defined]
+Window.setTitle = Window.set_title  # type: ignore[attr-defined]
+Window.getTitle = Window.get_title  # type: ignore[attr-defined]
+Window.getLowerWindow = Window.get_lower_window  # type: ignore[attr-defined]
+Window.getWindow = Window.get_window  # type: ignore[attr-defined]
+Window.checkLayout = Window.check_layout  # type: ignore[attr-defined]
+Window.setSkin = Window.set_skin  # type: ignore[attr-defined]
+Window.getSkin = Window.get_skin  # type: ignore[attr-defined]
+Window.setAllowScreensaver = Window.set_allow_screensaver  # type: ignore[attr-defined]
+Window.getAllowScreensaver = Window.get_allow_screensaver  # type: ignore[attr-defined]
+Window.setAlwaysOnTop = Window.set_always_on_top  # type: ignore[attr-defined]
+Window.getAlwaysOnTop = Window.get_always_on_top  # type: ignore[attr-defined]
+Window.setAutoHide = Window.set_auto_hide  # type: ignore[attr-defined]
+Window.setTransient = Window.set_transient  # type: ignore[attr-defined]
+Window.getTransient = Window.get_transient  # type: ignore[attr-defined]
+Window.setTransparent = Window.set_transparent  # type: ignore[attr-defined]
+Window.getTransparent = Window.get_transparent  # type: ignore[attr-defined]
+Window.setContextMenu = Window.set_context_menu  # type: ignore[attr-defined]
+Window.isContextMenu = Window.is_context_menu  # type: ignore[attr-defined]
+Window.setShowFrameworkWidgets = Window.set_show_framework_widgets  # type: ignore[attr-defined]
+Window.getShowFrameworkWidgets = Window.get_show_framework_widgets  # type: ignore[attr-defined]
+Window.setButtonAction = Window.set_button_action
+Window.borderLayout = Window.border_layout  # type: ignore[attr-defined]
+Window.noLayout = Window.no_layout  # type: ignore[attr-defined]
+Window.bumpLeft = Window.bump_left  # type: ignore[attr-defined]
+Window.bumpRight = Window.bump_right  # type: ignore[attr-defined]
+Window.bumpUp = Window.bump_up  # type: ignore[attr-defined]
+Window.bumpDown = Window.bump_down  # type: ignore[attr-defined]

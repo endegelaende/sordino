@@ -236,8 +236,8 @@ class JogglerSkinApplet(Applet):
 
             if _jm is not None:
                 _jm.add_item(self.buttonSettingsMenuItem())
-        except (ImportError, AttributeError):
-            pass
+        except (ImportError, AttributeError) as exc:
+            log.error("init: failed to add button settings menu item: %s", exc, exc_info=True)
 
     # ------------------------------------------------------------------
     # Parameters (overridable by child skins)
@@ -320,8 +320,8 @@ class JogglerSkinApplet(Applet):
                 sw, sh = _fw.get_screen_size()
                 if sw > 0 and sh > 0:
                     return sw, sh
-        except Exception:
-            pass
+        except Exception as exc:
+            log.debug("_get_screen_size: framework unavailable: %s", exc)
         return 800, 480
 
     # ------------------------------------------------------------------
@@ -358,6 +358,15 @@ class JogglerSkinApplet(Applet):
             w = 800
         if h is None:
             h = 480
+
+        # Set the display resolution — matches Lua: Framework:setVideoMode(w, h, 0, false)
+        try:
+            from jive.ui.framework import framework as _fw
+
+            if _fw is not None:
+                _fw.set_video_mode(w, h, 0, False)
+        except Exception as exc:
+            log.warning("skin: failed to set video mode %dx%d: %s", w, h, exc)
 
         screen_width = w
         screen_height = h
@@ -813,7 +822,7 @@ class JogglerSkinApplet(Applet):
         TEXT_COLOR_TEAL = [0, 0xBE, 0xBE]
 
         SELECT_COLOR = [0xE7, 0xE7, 0xE7]
-        SELECT_SH_COLOR = []
+        SELECT_SH_COLOR = []  # type: ignore[var-annotated]
 
         TITLE_HEIGHT = 65
         TITLE_FONT_SIZE = 20
@@ -3861,12 +3870,12 @@ class JogglerSkinApplet(Applet):
         screen_height = 480
         try:
             screen_width = int(os.environ.get("JL_SCREEN_WIDTH", "800"))
-        except (ValueError, TypeError):
-            pass
+        except (ValueError, TypeError) as exc:
+            log.debug("skinCustom: invalid JL_SCREEN_WIDTH env var: %s", exc)
         try:
             screen_height = int(os.environ.get("JL_SCREEN_HEIGHT", "480"))
-        except (ValueError, TypeError):
-            pass
+        except (ValueError, TypeError) as exc:
+            log.debug("skinCustom: invalid JL_SCREEN_HEIGHT env var: %s", exc)
 
         self.skin(s, reload, use_default_size, screen_width, screen_height)
 
@@ -3952,7 +3961,7 @@ class JogglerSkinApplet(Applet):
             btn_token = "NOW_PLAYING_BUTTON_" + v.upper()
             btn_text = self.string(btn_token) if self._strings_table else v
 
-            def _make_callback(button_name: str):
+            def _make_callback(button_name: str) -> Callable[..., Any]:  # type: ignore[name-defined]
                 def _cb(obj: Any, is_selected: bool) -> None:
                     self.setNowPlayingScreenButtons(button_name, is_selected)
                     try:
@@ -3960,8 +3969,8 @@ class JogglerSkinApplet(Applet):
 
                         if _jm is not None:
                             _jm.reload_skin()
-                    except (ImportError, AttributeError):
-                        pass
+                    except (ImportError, AttributeError) as exc:
+                        log.warning("npButtonSelectorShow: failed to reload skin: %s", exc)
 
                 return _cb
 
@@ -4018,8 +4027,8 @@ class JogglerSkinApplet(Applet):
 
             if _jm is not None:
                 _jm.remove_item_by_id("npButtonSelector")
-        except (ImportError, AttributeError):
-            pass
+        except (ImportError, AttributeError) as exc:
+            log.warning("free: failed to remove npButtonSelector menu item: %s", exc)
 
         self.images = {}
         self.imageTiles = {}

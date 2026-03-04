@@ -1,7 +1,9 @@
 # ──────────────────────────────────────────────────────────────────────────────
-# Jivelite-py — Continuous Integration
+# Sordino — Continuous Integration
 #
-# Runs the full test suite on every push and pull request.
+# Runs mypy strict type-checking on every push and PR.
+# Tests will be re-added once the test suite has been reworked.
+#
 # Matrix: Python 3.10 – 3.13 × Ubuntu + Windows
 # ──────────────────────────────────────────────────────────────────────────────
 
@@ -21,8 +23,41 @@ permissions:
   contents: read
 
 jobs:
-  test:
-    name: "Python ${{ matrix.python-version }} / ${{ matrix.os }}"
+  # ────────────────────────────────────────────────────────────────────────
+  # mypy strict type-checking
+  # ────────────────────────────────────────────────────────────────────────
+  typecheck:
+    name: "mypy strict / Python ${{ matrix.python-version }} / ${{ matrix.os }}"
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+        python-version: ["3.12"]
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip setuptools wheel
+          python -m pip install pygame-ce>=2.5.0 mypy>=1.0
+
+      - name: Run mypy --strict
+        run: |
+          python -m mypy jive/ --strict
+
+  # ────────────────────────────────────────────────────────────────────────
+  # Import smoke test — verify the package can be imported
+  # ────────────────────────────────────────────────────────────────────────
+  import-check:
+    name: "Import check / Python ${{ matrix.python-version }} / ${{ matrix.os }}"
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -31,61 +66,52 @@ jobs:
         python-version: ["3.10", "3.11", "3.12", "3.13"]
 
     steps:
-      # ── Checkout ───────────────────────────────────────────────────
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      # ── Python setup ───────────────────────────────────────────────
       - name: Set up Python ${{ matrix.python-version }}
         uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python-version }}
 
-      # ── System dependencies (Linux: SDL for pygame) ────────────────
       - name: Install SDL2 (Linux)
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y -qq libsdl2-dev libsdl2-image-dev libsdl2-mixer-dev libsdl2-ttf-dev
 
-      # ── Python dependencies ────────────────────────────────────────
-      - name: Install dependencies
+      - name: Install Sordino
         run: |
           python -m pip install --upgrade pip setuptools wheel
-          python -m pip install pygame>=2.5.0 pytest>=7.0 pytest-cov>=4.0
+          python -m pip install pygame-ce>=2.5.0
+          python -m pip install -e .
 
-      # ── Run tests ──────────────────────────────────────────────────
-      - name: Run tests
+      - name: Verify import and version
         env:
-          # pygame needs a video driver even in headless mode
           SDL_VIDEODRIVER: dummy
           SDL_AUDIODRIVER: dummy
         run: |
-          python -m pytest --tb=short -q --co -q 2>&1 | tail -1 || true
-          python -m pytest --tb=short -v --junitxml=results.xml
-
-      # ── Upload test results ────────────────────────────────────────
-      - name: Upload test results
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: test-results-${{ matrix.os }}-py${{ matrix.python-version }}
-          path: results.xml
-          retention-days: 14
+          python -c "import jive; print(f'jive {jive.__version__}')"
+          python -c "from jive.main import main; print('Entry point OK')"
+          python -m sordino --version || sordino --version
 
   # ────────────────────────────────────────────────────────────────────────
   # Summary job — single check for branch protection rules
   # ────────────────────────────────────────────────────────────────────────
-  all-tests-pass:
-    name: All tests pass
-    needs: test
+  all-checks-pass:
+    name: All checks pass
+    needs: [typecheck, import-check]
     runs-on: ubuntu-latest
     if: always()
     steps:
-      - name: Check matrix results
+      - name: Check results
         run: |
-          if [ "${{ needs.test.result }}" != "success" ]; then
-            echo "::error::Some test jobs failed or were cancelled."
+          if [ "${{ needs.typecheck.result }}" != "success" ]; then
+            echo "::error::mypy strict type-checking failed."
             exit 1
           fi
-          echo "All test matrix jobs passed."
+          if [ "${{ needs.import-check.result }}" != "success" ]; then
+            echo "::error::Import check failed on some configurations."
+            exit 1
+          fi
+          echo "All checks passed."

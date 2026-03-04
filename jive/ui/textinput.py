@@ -368,8 +368,8 @@ class _IPAddressValueProxy:
                 while len(parts) < 4:
                     parts.append("000")
                 return ".".join(parts)
-        except (ImportError, AttributeError):
-            pass
+        except (ImportError, AttributeError) as exc:
+            log.debug("import fallback: %s", exc)
         return self.str_val
 
     def __len__(self) -> int:
@@ -522,6 +522,25 @@ class Textinput(Widget):
         value proxy's ``getChars()`` if available.
     """
 
+    __slots__ = (
+        "cursor",
+        "indent",
+        "max_width",
+        "value",
+        "cursor_width",
+        "closure",
+        "allowed_chars",
+        "update_callback",
+        "scroll_accel",
+        "left_right_ir_accel",
+        "ir_accel",
+        "number_letter_accel",
+        "last_number_letter_ir_code",
+        "last_number_letter_key_code",
+        "up_handles_cursor",
+        "locked",
+    )
+
     def __init__(
         self,
         style: str,
@@ -559,8 +578,8 @@ class Textinput(Widget):
                 or fw.is_most_recent_input("scroll")
             ):
                 self.cursor_width = 1
-        except (ImportError, AttributeError):
-            pass
+        except (ImportError, AttributeError) as exc:
+            log.debug("import fallback: %s", exc)
 
         self.closure: Optional[Callable[..., bool]] = closure
         self.allowed_chars: str = allowed_chars or _DEFAULT_ALLOWED_CHARS
@@ -690,7 +709,7 @@ class Textinput(Widget):
     def _reverse_scroll_polarity_on_up_down_input(self) -> bool:
         """Check if up/down scroll polarity should be reversed."""
         if hasattr(self.value, "reverseScrollPolarityOnUpDownInput"):
-            return self.value.reverseScrollPolarityOnUpDownInput()
+            return self.value.reverseScrollPolarityOnUpDownInput()  # type: ignore[no-any-return]
         return False
 
     # ------------------------------------------------------------------
@@ -700,7 +719,7 @@ class Textinput(Widget):
     def is_valid(self) -> bool:
         """Return ``True`` if the current text entry is valid."""
         if hasattr(self.value, "isValid"):
-            return self.value.isValid(self.cursor)
+            return self.value.isValid(self.cursor)  # type: ignore[no-any-return]
         return True
 
     # Lua-compatible alias
@@ -740,7 +759,7 @@ class Textinput(Widget):
             self.play_sound("BUMP")
             w = self.get_window()
             if w is not None:
-                w.bump_right()
+                w.bump_right()  # type: ignore[attr-defined]
             return
 
         cursor = self.cursor
@@ -906,7 +925,7 @@ class Textinput(Widget):
                 self.play_sound("BUMP")
                 w = self.get_window()
                 if w is not None:
-                    w.bump_right()
+                    w.bump_right()  # type: ignore[attr-defined]
         return int(EVENT_CONSUME)
 
     def _insert_action(self) -> int:
@@ -917,7 +936,7 @@ class Textinput(Widget):
             self.play_sound("BUMP")
             w = self.get_window()
             if w is not None:
-                w.bump_right()
+                w.bump_right()  # type: ignore[attr-defined]
         return int(EVENT_CONSUME)
 
     def _go_action(
@@ -929,7 +948,7 @@ class Textinput(Widget):
                 self.play_sound("BUMP")
                 w = self.get_window()
                 if w is not None:
-                    w.bump_right()
+                    w.bump_right()  # type: ignore[attr-defined]
                 return int(EVENT_CONSUME)
 
             valid = False
@@ -940,7 +959,7 @@ class Textinput(Widget):
                 self.play_sound("BUMP")
                 w = self.get_window()
                 if w is not None:
-                    w.bump_right()
+                    w.bump_right()  # type: ignore[attr-defined]
         elif self.cursor <= len(str(self.value)):
             self._move_cursor(1)
             self.re_draw()
@@ -948,7 +967,7 @@ class Textinput(Widget):
             self.play_sound("BUMP")
             w = self.get_window()
             if w is not None:
-                w.bump_right()
+                w.bump_right()  # type: ignore[attr-defined]
         return int(EVENT_CONSUME)
 
     def _cursor_back_action(
@@ -960,7 +979,7 @@ class Textinput(Widget):
                 self.play_sound("BUMP")
                 w = self.get_window()
                 if w is not None:
-                    w.bump_left()
+                    w.bump_left()  # type: ignore[attr-defined]
                 return int(EVENT_CONSUME)
             else:
                 self.play_sound("WINDOWHIDE")
@@ -1056,8 +1075,8 @@ class Textinput(Widget):
                 self.cursor_width = 1
             else:
                 self.cursor_width = 0
-        except (ImportError, AttributeError):
-            pass
+        except (ImportError, AttributeError) as exc:
+            log.debug("import fallback: %s", exc)
 
         # ---- IR HOLD / PRESS: consume arrow and number keys ----
         if etype in (int(EVENT_IR_HOLD), int(EVENT_IR_PRESS)):
@@ -1209,7 +1228,7 @@ class Textinput(Widget):
                     self.play_sound("BUMP")
                     w = self.get_window()
                     if w is not None:
-                        w.bump_right()
+                        w.bump_right()  # type: ignore[attr-defined]
                     return int(EVENT_CONSUME)
 
             # Insert character
@@ -1222,7 +1241,7 @@ class Textinput(Widget):
                 self.play_sound("BUMP")
                 w = self.get_window()
                 if w is not None:
-                    w.bump_right()
+                    w.bump_right()  # type: ignore[attr-defined]
 
             return int(EVENT_CONSUME)
 

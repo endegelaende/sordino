@@ -245,8 +245,8 @@ class DNS:
             for family, socktype, proto, canonname, sockaddr in results:
                 ip = sockaddr[0]
                 if ip not in seen:
-                    seen.add(ip)
-                    ips.append(ip)
+                    seen.add(ip)  # type: ignore[arg-type]
+                    ips.append(ip)  # type: ignore[arg-type]
 
             # Try to get canonical name
             canonical = address

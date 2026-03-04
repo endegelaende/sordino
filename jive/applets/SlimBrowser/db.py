@@ -87,7 +87,7 @@ class DB:
 
     def menu_style(self) -> str:
         """Return the menu style string."""
-        return self.window_spec.get("menuStyle", "menu")
+        return self.window_spec.get("menuStyle", "menu")  # type: ignore[no-any-return]
 
     # Alias for Lua compatibility
     def menuStyle(self) -> str:
@@ -95,7 +95,7 @@ class DB:
 
     def window_style(self) -> str:
         """Return the window style string."""
-        return self.window_spec.get("windowStyle", "text_list")
+        return self.window_spec.get("windowStyle", "text_list")  # type: ignore[no-any-return]
 
     # Alias
     def windowStyle(self) -> str:
@@ -103,7 +103,7 @@ class DB:
 
     def label_item_style(self) -> str:
         """Return the label item style string."""
-        return self.window_spec.get("labelItemStyle", "item")
+        return self.window_spec.get("labelItemStyle", "item")  # type: ignore[no-any-return]
 
     # Alias
     def labelItemStyle(self) -> str:
@@ -148,8 +148,28 @@ class DB:
 
         Returns ``True`` if the stored data was invalidated (i.e. a
         reset occurred because count or timestamp changed).
+
+        The chunk may come from two sources:
+        - A ``status`` response (has ``count`` = songCount+2 for menu items)
+        - ``player.getPlayerStatus()`` (has ``playlist_tracks`` but may
+          lack ``count``)
+
+        In the original Lua code ``_assert`` was a no-op, so a missing
+        ``count`` field never crashed.  We fall back to ``playlist_tracks``
+        when ``count`` is absent.
         """
-        assert "count" in chunk, "chunk must have 'count' field"
+        # Lua _assert was a no-op — don't hard-crash here.
+        # Fall back to playlist_tracks when count is missing.
+        raw_count = chunk.get("count")
+        if raw_count is None:
+            raw_count = chunk.get("playlist_tracks")
+        if raw_count is None:
+            log.warning(
+                "update_status: chunk has neither 'count' nor 'playlist_tracks' — "
+                "keys present: %s",
+                list(chunk.keys())[:20],
+            )
+            return False
 
         # Keep the chunk as header
         self.last_chunk = chunk
@@ -161,7 +181,7 @@ class DB:
 
         # Detect changes that invalidate data
         ts = chunk.get("playlist_timestamp", False)
-        c_count = int(chunk["count"])
+        c_count = int(raw_count)
 
         reset = False
         if c_count != self.count:
@@ -270,7 +290,7 @@ class DB:
         Returns a list of ``{"key": str, "index": int}`` dicts.
         """
         tmp = [{"key": k, "index": v} for k, v in self.text_index.items()]
-        tmp.sort(key=lambda x: x["index"])
+        tmp.sort(key=lambda x: x["index"])  # type: ignore[arg-type, return-value]
         return tmp
 
     # Alias

@@ -62,11 +62,15 @@ from __future__ import annotations
 import re
 import weakref
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Sequence, Union
+from typing import Any, Dict, Iterator, List, Optional, Sequence, Union
 
 from jive.utils.log import logger
 
 log = logger("jivelite.locale")
+
+# Alias for Python's built-in str() — the StringsTable class has a method
+# also called ``str`` which shadows the builtin inside that scope.
+builtins_str = str
 
 
 # ─── LocalizedString ──────────────────────────────────────────────────────────
@@ -172,6 +176,26 @@ class StringsTable:
             return key in self._parent
         return False
 
+    def __iter__(self) -> Iterator[str]:
+        """Iterate over all keys (own + parent, deduplicated)."""
+        seen: set[str] = set()
+        for key in self._data:
+            seen.add(key)
+            yield key
+        if self._parent is not None:
+            for key in self._parent:
+                if key not in seen:
+                    yield key
+
+    def __len__(self) -> int:
+        """Return the number of unique keys (own + parent)."""
+        if self._parent is None:
+            return len(self._data)
+        # Deduplicate across parent chain
+        all_keys: set[str] = set(self._data)
+        all_keys.update(self._parent)
+        return len(all_keys)
+
     def get(self, key: str, default: Any = None) -> Any:
         """Get a value by key with a default fallback."""
         result = self[key]
@@ -187,7 +211,7 @@ class StringsTable:
         self,
         token: Union[str, LocalizedString],
         *args: Any,
-    ) -> str:
+    ) -> Union["LocalizedString", str]:
         """
         Look up a localized string by token name.
 
@@ -197,29 +221,41 @@ class StringsTable:
 
         When format arguments are provided, the translated string is
         passed through ``str.format()`` or ``%``-formatting (matching
-        the Lua ``string.format`` convention).
+        the Lua ``string.format`` convention) and a plain ``str`` is
+        returned.
+
+        When **no** format arguments are given, the :class:`LocalizedString`
+        object itself is returned (matching the Lua ``str()`` function
+        which returns ``self[token]`` — the mutable table with a
+        ``__tostring`` metamethod).  This is critical for live locale
+        switching: widgets that store the returned object will see
+        updated translations when ``LocalizedString.str`` is changed
+        in-place by :meth:`set_locale` / ``_parse_strings_file``.
 
         Args:
             token: The token name (string or LocalizedString).
             *args: Optional format arguments.
 
         Returns:
-            The translated string, or the token name itself if no
-            translation is found.
+            Without *args*: the :class:`LocalizedString` object (or the
+            token string if no translation exists).
+            With *args*: a formatted ``str``.
 
         Examples:
             >>> t = StringsTable()
             >>> t["HELLO"] = LocalizedString("Hello")
             >>> t.str("HELLO")
+            LocalizedString('Hello')
+            >>> str(t.str("HELLO"))
             'Hello'
             >>> t.str("MISSING")
             'MISSING'
         """
         # Resolve token to string
         if isinstance(token, LocalizedString):
-            token_str = token.str if isinstance(token.str, str) else str(token)
+            token_str = token.str if isinstance(token.str, str) else builtins_str(token)
         else:
-            token_str = str(token)
+            token_str = builtins_str(token)
 
         # Try machine-specific override first
         if self._machine_suffix:
@@ -233,7 +269,8 @@ class StringsTable:
                         else machine_token,
                         args,
                     )
-                return str(machine_entry)
+                # Return the mutable LocalizedString object (Lua returns the table)
+                return machine_entry
 
         # Try the regular token
         entry = self[token_str]
@@ -243,14 +280,15 @@ class StringsTable:
                     entry.str if isinstance(entry.str, str) else token_str,
                     args,
                 )
-            return str(entry)
+            # Return the mutable LocalizedString object (Lua returns the table)
+            return entry
 
         # Fallback: return the token name itself
         if args:
             return _format_string(token_str, args)
         return token_str
 
-    def __repr__(self) -> str:
+    def __repr__(self) -> str:  # type: ignore[valid-type]
         parent_info = f", parent={self._parent!r}" if self._parent else ""
         return f"StringsTable({len(self._data)} entries{parent_info})"
 
@@ -709,14 +747,14 @@ def _format_string(template: str, args: Sequence[Any]) -> str:
     # Try %-style formatting (Lua string.format convention)
     try:
         return template % args
-    except (TypeError, ValueError):
-        pass
+    except (TypeError, ValueError) as exc:
+        log.debug("Percent-style formatting failed for %r: %s", template, exc)
 
     # Try str.format style
     try:
         return template.format(*args)
-    except (IndexError, KeyError, ValueError):
-        pass
+    except (IndexError, KeyError, ValueError) as exc:
+        log.debug("str.format formatting failed for %r: %s", template, exc)
 
     # Last resort: just append args
     return template + " " + " ".join(str(a) for a in args)

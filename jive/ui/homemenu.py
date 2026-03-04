@@ -338,15 +338,15 @@ class HomeMenu:
         """
         entry = self.menu_table.get(item_id)
         if entry is None:
-            return item.get("weight", 100)
+            return item.get("weight", 100)  # type: ignore[no-any-return]
 
         node = entry.get("node", "home")
 
         if node == "home":
-            return item.get("weight", 100)
+            return item.get("weight", 100)  # type: ignore[no-any-return]
 
         if node == "hidden":
-            return entry.get("hiddenWeight", 100)
+            return entry.get("hiddenWeight", 100)  # type: ignore[no-any-return]
 
         # Recurse up the node chain
         node_item = self.menu_table.get(node)
@@ -358,7 +358,7 @@ class HomeMenu:
                 item.get("text", "?"),
                 node,
             )
-            return item.get("weight", 100)
+            return item.get("weight", 100)  # type: ignore[no-any-return]
 
         parent_weight = self.get_complex_weight(node, node_item)
         return f"{parent_weight}.{item.get('weight', 100)}"
@@ -402,7 +402,7 @@ class HomeMenu:
         if menu is None:
             log.error("no menu object found for %s", node)
             return None
-        return menu
+        return menu  # type: ignore[no-any-return]
 
     getNodeMenu = get_node_menu
 
@@ -692,7 +692,7 @@ class HomeMenu:
             new_node = item.get("node")
             prev_node = self.menu_table[item["id"]].get("node")
             if new_node != prev_node:
-                self._change_node(item["id"], new_node)
+                self._change_node(item["id"], new_node)  # type: ignore[arg-type]
             return
 
         # Create a new window + menu for this node
@@ -1086,7 +1086,7 @@ class HomeMenu:
         entry = self.node_table.get(node)
         if entry is None:
             return None
-        return entry.get("items", {}).get(item_id)
+        return entry.get("items", {}).get(item_id)  # type: ignore[no-any-return]
 
     getNodeItemById = get_node_item_by_id
 

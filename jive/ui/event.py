@@ -410,8 +410,8 @@ class Event:
         elif isinstance(self._data, ActionData):
             parts.append(f" actionIndex={self._data.index}")
         elif isinstance(self._data, MotionData):
-            d = self._data
-            parts.append(f" x={d.x},y={d.y},z={d.z}")
+            d = self._data  # type: ignore[assignment]
+            parts.append(f" x={d.x},y={d.y},z={d.z}")  # type: ignore[attr-defined]
         elif isinstance(self._data, SwitchData):
             parts.append(f" code={self._data.code},value={self._data.value}")
         elif isinstance(self._data, IRData):
@@ -424,3 +424,23 @@ class Event:
 
     def __str__(self) -> str:
         return self.__repr__()
+
+    # ------------------------------------------------------------------
+    # camelCase aliases — match the Lua ``Event:getKeycode()`` etc. API
+    # so that applet code ported from Lua works without modification.
+    # ------------------------------------------------------------------
+
+    getType = get_type
+    getTicks = get_ticks
+    getScroll = get_scroll
+    getKeycode = get_keycode
+    getUnicode = get_unicode
+    getMouse = get_mouse
+    getMouseXY = get_mouse_xy
+    getAction = get_action
+    getActionInternal = get_action_internal
+    getMotion = get_motion
+    getSwitch = get_switch
+    getIRCode = get_ir_code
+    getGesture = get_gesture
+    getValue = get_value

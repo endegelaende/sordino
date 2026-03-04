@@ -115,8 +115,8 @@ class Timer:
         if self.expires is not None:
             try:
                 Timer._timers.remove(self)
-            except ValueError:
-                pass
+            except ValueError as exc:
+                log.debug("remove failed: %s", exc)
             self.expires = None
 
     def restart(self, interval: Optional[int] = None) -> None:
@@ -152,8 +152,8 @@ class Timer:
         if self.expires is not None:
             try:
                 Timer._timers.remove(self)
-            except ValueError:
-                pass
+            except ValueError as exc:
+                log.debug("remove failed: %s", exc)
 
         self.expires = expires
         Timer._next_key += 1
@@ -198,7 +198,7 @@ class Timer:
             # Schedule next fire *before* calling back (callback may
             # modify the timer, e.g. stop or restart it).
             if not timer.once:
-                next_fire = timer.expires + timer.interval
+                next_fire = timer.expires + timer.interval  # type: ignore[operator]
                 if next_fire < now:
                     # We fell behind — catch up instead of firing a burst.
                     next_fire = now + timer.interval
@@ -211,7 +211,7 @@ class Timer:
             try:
                 timer.callback()
             except Exception as exc:
-                log.warn(f"timer error: {exc}")
+                log.warn("timer error: %s", exc)
 
     @classmethod
     def clear_all(cls) -> None:

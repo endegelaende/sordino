@@ -69,7 +69,7 @@ from jive.utils.log import logger
 if TYPE_CHECKING:
     from jive.ui.event import Event
     from jive.ui.surface import Surface
-    from jive.ui.tile import JiveTile
+    from jive.ui.tile import JiveTile  # type: ignore[attr-defined]
 
 __all__ = ["Slider", "Scrollbar"]
 
@@ -117,6 +117,37 @@ class Slider(Widget):
     drag_done_closure : callable, optional
         Called when a drag gesture completes.
     """
+
+    __slots__ = (
+        "min",
+        "range",
+        "value",
+        "size",
+        "closure",
+        "drag_done_closure",
+        "slider_enabled",
+        "jump_on_down",
+        "drag_threshold",
+        "mouse_state",
+        "mouse_down_x",
+        "mouse_down_y",
+        "distance_from_mouse_down_max",
+        "pill_offset",
+        "pill_drag_only",
+        "use_drag_done_closure",
+        "touchpad_bottom_correction",
+        "_align",
+        "_bg_tile",
+        "_tile",
+        "_pill_img",
+        "_pill_x",
+        "_pill_y",
+        "_pill_w",
+        "_pill_h",
+        "_horizontal",
+        "_slider_x",
+        "_slider_y",
+    )
 
     def __init__(
         self,
@@ -182,6 +213,37 @@ class Slider(Widget):
             | EVENT_IR_REPEAT,
             lambda event: self._event_handler(event),
         )
+
+    # ------------------------------------------------------------------
+    # camelCase property aliases (Lua compatibility)
+    # ------------------------------------------------------------------
+    # In Lua these are plain fields set directly (e.g.
+    # ``slider.jumpOnDown = true``).  With ``__slots__`` we need
+    # explicit properties so that camelCase assignment works.
+
+    @property
+    def jumpOnDown(self) -> bool:
+        return self.jump_on_down
+
+    @jumpOnDown.setter
+    def jumpOnDown(self, value: bool) -> None:
+        self.jump_on_down = value
+
+    @property
+    def pillDragOnly(self) -> bool:
+        return self.pill_drag_only
+
+    @pillDragOnly.setter
+    def pillDragOnly(self, value: bool) -> None:
+        self.pill_drag_only = value
+
+    @property
+    def dragThreshold(self) -> int:
+        return self.drag_threshold
+
+    @dragThreshold.setter
+    def dragThreshold(self, value: int) -> None:
+        self.drag_threshold = value
 
     # ------------------------------------------------------------------
     # Public API — Scrollbar mode
@@ -346,7 +408,7 @@ class Slider(Widget):
             dy = y - (self.mouse_down_y or 0)
             distance = math.sqrt(dx * dx + dy * dy)
             if distance > self.distance_from_mouse_down_max:
-                self.distance_from_mouse_down_max = distance
+                self.distance_from_mouse_down_max = distance  # type: ignore[assignment]
 
     def _mouse_exceeded_buffer_distance(self, value: int) -> bool:
         return self.distance_from_mouse_down_max >= value
@@ -468,11 +530,11 @@ class Slider(Widget):
                 if in_upper or (pos <= self.value and not in_lower):
                     from jive.ui.framework import Framework
 
-                    Framework.push_action("page_up")
+                    Framework.push_action("page_up")  # type: ignore[call-arg, arg-type]
                 elif in_lower or pos > self.value + self.size:
                     from jive.ui.framework import Framework
 
-                    Framework.push_action("page_down")
+                    Framework.push_action("page_down")  # type: ignore[call-arg, arg-type]
 
             return self._finish_mouse_sequence()
 
@@ -508,6 +570,19 @@ class Slider(Widget):
     # Skin (jiveL_slider_skin)
     # ------------------------------------------------------------------
 
+    def re_skin(self) -> None:
+        """Reset all slider-specific cached skin state, then call super."""
+        self._bg_tile = None
+        self._tile = None
+        self._pill_img = None
+        self._pill_x = 0
+        self._pill_y = 0
+        self._pill_w = 0
+        self._pill_h = 0
+        self._horizontal = True
+        self._align = int(ALIGN_CENTER)
+        super().re_skin()
+
     def _skin(self) -> None:
         from jive.ui.style import (
             style_align,
@@ -538,6 +613,14 @@ class Slider(Widget):
 
         # Alignment
         self._align = style_align(self, "align", int(ALIGN_CENTER))
+
+        log.debug(
+            "Slider._skin: horizontal=%s bgImg=%s img=%s pillImg=%s",
+            self._horizontal,
+            self._bg_tile,
+            self._tile,
+            self._pill_img,
+        )
 
     # ------------------------------------------------------------------
     # Layout (jiveL_slider_layout)
@@ -760,6 +843,8 @@ class Scrollbar(Slider):
     closure : callable, optional
         Called as ``closure(scrollbar, value, done)`` on position change.
     """
+
+    __slots__ = ()
 
     def __init__(
         self,

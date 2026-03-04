@@ -125,12 +125,12 @@ class JogglerSkinMeta(AppletMeta):
         screen_height = 0
         try:
             screen_width = int(os.environ.get("JL_SCREEN_WIDTH", "0"))
-        except (ValueError, TypeError):
-            pass
+        except (ValueError, TypeError) as exc:
+            log.debug("register_applet: invalid JL_SCREEN_WIDTH env var: %s", exc)
         try:
             screen_height = int(os.environ.get("JL_SCREEN_HEIGHT", "0"))
-        except (ValueError, TypeError):
-            pass
+        except (ValueError, TypeError) as exc:
+            log.debug("register_applet: invalid JL_SCREEN_HEIGHT env var: %s", exc)
 
         # This skin only works in landscape mode with a decent ratio of >= 1.2
         if (
@@ -167,13 +167,14 @@ class JogglerSkinMeta(AppletMeta):
             from jive.jive_main import jive_main as _jm
 
             return _jm
-        except (ImportError, AttributeError):
-            pass
+        except (ImportError, AttributeError) as exc:
+            log.debug("_get_jive_main: primary import failed: %s", exc)
 
         # Fallback: check for a module-level variable
         try:
             import jive.jive_main as _jm_mod
 
             return getattr(_jm_mod, "jive_main", None)
-        except ImportError:
+        except ImportError as exc:
+            log.debug("_get_jive_main: fallback import failed: %s", exc)
             return None

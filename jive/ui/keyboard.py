@@ -129,6 +129,22 @@ class Keyboard(Group):
         styling, and register for update callbacks.
     """
 
+    __slots__ = (
+        "_keyboard_width",
+        "_row_border",
+        "_row_offset_x",
+        "_default_width",
+        "_default_height",
+        "_default_width_large",
+        "kb_type",
+        "textinput",
+        "keyboard",
+        "key_info",
+        "keyboards",
+        "last",
+        "pushed",
+    )
+
     def __init__(
         self,
         style: str,
@@ -895,13 +911,17 @@ class Keyboard(Group):
     # Backspace button (not part of keyboard widget, but always paired)
     # ==================================================================
 
-    def backspace(self) -> Widget:
+    @staticmethod
+    def backspace() -> Widget:
         """
         Return a standard backspace Button widget.
 
         Not actually part of the Keyboard widget itself, but always
         paired with a keyboard in the UI.  Delivered here to keep
         applet code cleaner.
+
+        Can be called as both ``Keyboard.backspace()`` (matching the
+        Lua ``Keyboard.backspace()`` idiom) and ``self.backspace()``.
         """
         from jive.ui.button import Button as UIButton
 
@@ -914,8 +934,8 @@ class Keyboard(Group):
                 e = Event(int(EVENT_CHAR_PRESS), unicode=ord("\b"))
                 fw.play_sound("SELECT")
                 fw.dispatch_event(None, e)
-            except (ImportError, AttributeError):
-                pass
+            except (ImportError, AttributeError) as exc:
+                log.debug("import fallback: %s", exc)
             return int(EVENT_CONSUME)
 
         def on_hold() -> int:
@@ -924,8 +944,8 @@ class Keyboard(Group):
 
                 fw.play_sound("SELECT")
                 fw.push_action("clear")
-            except (ImportError, AttributeError):
-                pass
+            except (ImportError, AttributeError) as exc:
+                log.debug("import fallback: %s", exc)
             return int(EVENT_CONSUME)
 
         btn = UIButton(icon, action=on_press, hold_action=on_hold)
@@ -978,8 +998,8 @@ class Keyboard(Group):
 
                                 e = Event(int(EVENT_CHAR_PRESS), unicode=ord(ch))
                                 fw.dispatch_event(None, e)
-                            except (ImportError, AttributeError):
-                                pass
+                            except (ImportError, AttributeError) as exc:
+                                log.debug("import fallback: %s", exc)
                             if self.last:
                                 self.set_keyboard(self.last)
                                 self.last = None
@@ -1003,8 +1023,8 @@ class Keyboard(Group):
 
                             e = Event(int(EVENT_CHAR_PRESS), unicode=ord(ch))
                             fw.dispatch_event(None, e)
-                        except (ImportError, AttributeError):
-                            pass
+                        except (ImportError, AttributeError) as exc:
+                            log.debug("import fallback: %s", exc)
                         if self.last:
                             self.set_keyboard(self.last)
                             self.last = None
@@ -1042,8 +1062,8 @@ class Keyboard(Group):
                 from jive.ui.framework import framework as fw
 
                 fw.push_action(cursor_action)
-            except (ImportError, AttributeError):
-                pass
+            except (ImportError, AttributeError) as exc:
+                log.debug("import fallback: %s", exc)
             return int(EVENT_CONSUME)
 
         return {
@@ -1062,8 +1082,8 @@ class Keyboard(Group):
                 for ch in key_text:
                     e = Event(int(EVENT_CHAR_PRESS), unicode=ord(ch))
                     fw.dispatch_event(None, e)
-            except (ImportError, AttributeError):
-                pass
+            except (ImportError, AttributeError) as exc:
+                log.debug("import fallback: %s", exc)
             return int(EVENT_CONSUME)
 
         return {
@@ -1109,8 +1129,8 @@ class Keyboard(Group):
                 from jive.ui.framework import framework as fw
 
                 fw.push_action("finish_operation")
-            except (ImportError, AttributeError):
-                pass
+            except (ImportError, AttributeError) as exc:
+                log.debug("import fallback: %s", exc)
             return int(EVENT_CONSUME)
 
         def _input_updated_fn(label_widget: Widget) -> None:
@@ -1171,8 +1191,8 @@ class Keyboard(Group):
 
                 e = Event(int(EVENT_CHAR_PRESS), unicode=ord(" "))
                 fw.dispatch_event(None, e)
-            except (ImportError, AttributeError):
-                pass
+            except (ImportError, AttributeError) as exc:
+                log.debug("import fallback: %s", exc)
             return int(EVENT_CONSUME)
 
         return {
@@ -1192,13 +1212,13 @@ class Keyboard(Group):
         keyboard layout selection, or ``None`` if no locale is set.
         """
         try:
-            from jive.utils.locale import get_locale
+            from jive.utils.locale import get_locale  # type: ignore[attr-defined]
 
             loc = get_locale()
             if loc:
                 return str(loc)
-        except (ImportError, AttributeError):
-            pass
+        except (ImportError, AttributeError) as exc:
+            log.debug("import fallback: %s", exc)
         return None
 
     # ------------------------------------------------------------------
@@ -1217,7 +1237,9 @@ class Keyboard(Group):
     # Iterate over child widgets (for drawing)
     # ------------------------------------------------------------------
 
-    def iterate(self, closure: Callable[..., None]) -> None:
+    def iterate(
+        self, closure: Callable[..., None], include_hidden: bool = False
+    ) -> None:
         """Iterate over all key widgets, calling *closure* for each."""
         if self._widgets:
             for widget in self._widgets:

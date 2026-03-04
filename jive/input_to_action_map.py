@@ -386,4 +386,5 @@ unassigned_action_mappings: list[str] = [
     "power_on",
     "cancel",
     "mute",
+    "start_demo",
 ]

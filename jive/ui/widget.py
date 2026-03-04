@@ -30,11 +30,11 @@ from typing import (
     TYPE_CHECKING,
     Any,
     Callable,
+    Dict,
     List,
     Optional,
-    Sequence,
     Tuple,
-    Union,
+    TypeAlias,
 )
 
 from jive.ui.constants import (
@@ -72,15 +72,25 @@ log = logger("jivelite.ui")
 
 # A listener handle is a list ``[mask, callback]`` — mutable so the caller
 # can hold a reference and we can identity-compare on removal.
-ListenerHandle = list  # [int, Callable[[Event], int]]
+ListenerHandle: TypeAlias = List[Any]
 
 # An animation handle is a list ``[callback, frame_skip, counter]``.
-AnimationHandle = list  # [Callable[..., None], int, int]
+AnimationHandle: TypeAlias = List[Any]
 
 
 # ---------------------------------------------------------------------------
 # Widget class
 # ---------------------------------------------------------------------------
+
+
+def _mark_screen_dirty() -> None:
+    """Notify the framework that the screen needs redrawing."""
+    try:
+        from jive.ui.framework import framework as fw
+
+        fw._screen_dirty = True
+    except (ImportError, AttributeError):
+        pass
 
 
 class Widget:
@@ -125,6 +135,7 @@ class Widget:
         "_layout_origin",
         "_mouse_bounds",
         "_stable_sort_index",
+        "_style_path",
     )
 
     # Class-level frame rate — set by Framework.init(); defaults to 30.
@@ -172,6 +183,10 @@ class Widget:
         self._child_origin: int = 0
         self._layout_origin: int = 0
 
+        # Cached style path (set by style_path(), cleared by re_skin()
+        # and style_changed()).
+        self._style_path: Optional[str] = None
+
         # Cached mouse-hit bounds (may differ from visual bounds)
         self._mouse_bounds: Optional[list[int]] = None
 
@@ -179,12 +194,22 @@ class Widget:
     # Child iteration  (overridden by containers like Group, Window, Menu)
     # ------------------------------------------------------------------
 
-    def iterate(self, closure: Callable[[Widget], None]) -> None:
+    def iterate(
+        self, closure: Callable[["Widget"], None], include_hidden: bool = False
+    ) -> None:
         """
         Call *closure(child)* for every child widget.
 
         The base implementation does nothing (leaf widget).  Containers
         override this.
+
+        Parameters
+        ----------
+        closure:
+            Function to call for each child widget.
+        include_hidden:
+            If ``True``, hidden widgets are included in the iteration.
+            Defaults to ``False`` (skip hidden widgets).
         """
         pass
 
@@ -374,10 +399,31 @@ class Widget:
         Mark the widget as needing a skin update.
 
         Also implies re-layout and re-draw.
+
+        Resets all cached geometry and style values to their defaults
+        so that stale data from a previous skin cannot persist.  This
+        mirrors the C original where bumping ``jive_origin`` causes
+        every widget to run its full ``_skin()`` pass from scratch on
+        the next ``checkSkin()``.
         """
         self._needs_skin = True
         self._needs_layout = True
         self._needs_draw = True
+
+        # Reset style-derived geometry to defaults — these will be
+        # repopulated by _widget_pack() / _skin() during the next
+        # checkSkin() pass.  Do NOT reset self.bounds — bounds are
+        # computed by _layout() / set_bounds(), not during skinning.
+        # The C original's reSkin() likewise does not touch bounds.
+        self.preferred_bounds[:] = [None, None, None, None]
+        self.padding[:] = [0, 0, 0, 0]
+        self.border[:] = [0, 0, 0, 0]
+        self._mouse_bounds = None
+
+        # Invalidate cached style path so style_path() recomputes it
+        # with the current style_modifier.
+        self._style_path = None
+        _mark_screen_dirty()
 
     def re_layout(self) -> None:
         """
@@ -387,10 +433,12 @@ class Widget:
         """
         self._needs_layout = True
         self._needs_draw = True
+        _mark_screen_dirty()
 
     def re_draw(self) -> None:
         """Mark the widget's bounding box for redrawing."""
         self._needs_draw = True
+        _mark_screen_dirty()
 
     def check_skin(self) -> None:
         """Apply the skin if the dirty flag is set."""
@@ -402,13 +450,24 @@ class Widget:
         """
         Run the layout pass if the dirty flag is set, recursing into
         children.
+
+        Optimisations vs. the naive ``lambda child: child.check_layout()``:
+
+        1. Early return when neither skin nor layout is dirty on *this*
+           widget (still recurses into children in case they are dirty).
+        2. Uses a module-level function reference (``_widget_check_layout``,
+           assigned after the class body) instead of allocating a new
+           lambda on every call.
         """
+        if not self._needs_skin and not self._needs_layout:
+            # This widget is clean but a descendant might be dirty.
+            self.iterate(_widget_check_layout)
+            return
         self.check_skin()
         if self._needs_layout:
             self._layout()
             self._needs_layout = False
-        # Recurse
-        self.iterate(lambda child: child.check_layout())
+        self.iterate(_widget_check_layout)
 
     # ------------------------------------------------------------------
     # Skin / Layout / Draw  (to be overridden by subclasses)
@@ -430,9 +489,16 @@ class Widget:
         """
         pass
 
-    def draw(self, surface: Surface) -> None:
+    def draw(self, surface: Surface, layer: int = 0xFF) -> None:
         """
         Paint the widget onto *surface*.
+
+        Parameters
+        ----------
+        surface : Surface
+            The target surface to paint on.
+        layer : int
+            Bitmask of layers to draw (default ``0xFF`` = all layers).
 
         **Must** be overridden by concrete widget classes.
         """
@@ -508,8 +574,8 @@ class Widget:
         """Remove the listener identified by *handle*."""
         try:
             self.listeners.remove(handle)
-        except ValueError:
-            pass
+        except ValueError as exc:
+            log.debug("remove failed: %s", exc)
 
     # ------------------------------------------------------------------
     # Animations
@@ -549,8 +615,8 @@ class Widget:
         """Remove the animation identified by *handle*."""
         try:
             self.animations.remove(handle)
-        except ValueError:
-            pass
+        except ValueError as exc:
+            log.debug("remove failed: %s", exc)
 
         if self.visible:
             self._unregister_animation_from_framework()
@@ -561,8 +627,8 @@ class Widget:
             from jive.ui.framework import framework as fw
 
             fw._add_animation_widget(self)
-        except (ImportError, AttributeError):
-            pass
+        except (ImportError, AttributeError) as exc:
+            log.debug("import fallback: %s", exc)
 
     def _unregister_animation_from_framework(self) -> None:
         """Tell Framework this widget may no longer need animation ticks."""
@@ -570,8 +636,8 @@ class Widget:
             from jive.ui.framework import framework as fw
 
             fw._remove_animation_widget(self)
-        except (ImportError, AttributeError):
-            pass
+        except (ImportError, AttributeError) as exc:
+            log.debug("import fallback: %s", exc)
 
     # ------------------------------------------------------------------
     # Timers
@@ -604,8 +670,8 @@ class Widget:
         timer.stop()
         try:
             self.timers.remove(timer)
-        except ValueError:
-            pass
+        except ValueError as exc:
+            log.debug("remove failed: %s", exc)
 
     # ------------------------------------------------------------------
     # Event dispatch
@@ -680,7 +746,9 @@ class Widget:
                     r = callback(event)
                     result |= r or 0
                 except Exception as exc:
-                    log.warn(f"listener error: {exc}")
+                    import traceback
+
+                    log.warn("listener error: %s\n%s", exc, traceback.format_exc())
 
                 if result & int(EVENT_CONSUME):
                     break
@@ -741,8 +809,8 @@ class Widget:
                 from jive.ui.framework import framework as fw
 
                 fw.play_sound(sound)
-            except (ImportError, AttributeError):
-                pass
+            except (ImportError, AttributeError) as exc:
+                log.debug("import fallback: %s", exc)
 
     # ------------------------------------------------------------------
     # Smooth scrolling flag
@@ -919,3 +987,50 @@ class Widget:
 
     def __str__(self) -> str:
         return self.__repr__()
+
+    # ------------------------------------------------------------------
+    # camelCase aliases (Lua compatibility)
+    # ------------------------------------------------------------------
+    setStyle = set_style
+    getStyle = get_style
+    setStyleModifier = set_style_modifier
+    getStyleModifier = get_style_modifier
+    setBounds = set_bounds
+    getBounds = get_bounds
+    getPreferredBounds = get_preferred_bounds
+    setSize = set_size
+    getSize = get_size
+    setPosition = set_position
+    getPosition = get_position
+    setPadding = set_padding
+    getPadding = get_padding
+    setBorder = set_border
+    getBorder = get_border
+    isHidden = is_hidden
+    setHidden = set_hidden
+    isVisible = is_visible
+    getParent = get_parent
+    getWindow = get_window
+    reSkin = re_skin
+    reLayout = re_layout
+    reDraw = re_draw
+    checkSkin = check_skin
+    checkLayout = check_layout
+    addListener = add_listener
+    addActionListener = add_action_listener
+    removeListener = remove_listener
+    addAnimation = add_animation
+    removeAnimation = remove_animation
+    addTimer = add_timer
+    removeTimer = remove_timer
+    mouseInside = mouse_inside
+    setAccelKey = set_accel_key
+    getAccelKey = get_accel_key
+    playSound = play_sound
+
+
+# Module-level function reference used by ``check_layout`` to avoid
+# allocating a new lambda on every call.  Defined after the class body
+# so that the name ``Widget`` is available.
+def _widget_check_layout(child: Widget) -> None:
+    child.check_layout()

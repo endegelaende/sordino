@@ -73,7 +73,7 @@ def pairs_by_keys(
         >>> list(pairs_by_keys(d, key_func=lambda k: -d[k]))
         [('cherry', 3), ('banana', 2), ('apple', 1)]
     """
-    sorted_keys = sorted(t.keys(), key=key_func)  # type: ignore[arg-type]
+    sorted_keys = sorted(t.keys(), key=key_func)  # type: ignore[type-var, arg-type]
     for k in sorted_keys:
         yield k, t[k]
 
@@ -238,4 +238,4 @@ def sort(
         >>> items
         [3, 2, 1]
     """
-    lst.sort(key=key_func, reverse=reverse)  # type: ignore[arg-type]
+    lst.sort(key=key_func, reverse=reverse)

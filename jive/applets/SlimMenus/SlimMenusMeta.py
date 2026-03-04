@@ -88,7 +88,6 @@ class SlimMenusMeta(AppletMeta):
                 "MENUS_MY_MUSIC",
                 lambda applet, *args: applet.myMusicSelector(*args),
                 weight=2,
-                extras={"id": "hm_myMusicSelector"},
             )
             jive_main.add_item(my_music_item)
 
@@ -99,7 +98,6 @@ class SlimMenusMeta(AppletMeta):
                 "MENUS_OTHER_LIBRARY",
                 lambda applet, *args: applet.otherLibrarySelector(*args),
                 weight=100,
-                extras={"id": "hm_otherLibrary"},
             )
             jive_main.add_item(other_library_item)
 
@@ -118,7 +116,7 @@ class SlimMenusMeta(AppletMeta):
     # Menu-item builder helper
     # ------------------------------------------------------------------
 
-    def menu_item(
+    def menu_item(  # type: ignore[override]
         self,
         item_id: str,
         node: str,
@@ -140,7 +138,9 @@ class SlimMenusMeta(AppletMeta):
             the token is resolved; otherwise the raw token is used.
         callback:
             Callable ``callback(applet, ...)`` invoked when the user
-            selects the item.
+            selects the item.  The applet instance is loaded on demand
+            and injected as the first argument (matching the base
+            ``AppletMeta.menu_item`` behaviour).
         weight:
             Sort weight (lower = higher in the menu).
         extras:
@@ -159,8 +159,8 @@ class SlimMenusMeta(AppletMeta):
                 resolved = strings_table.str(text_token)
                 if resolved:
                     text = resolved
-            except Exception:
-                pass
+            except Exception as exc:
+                log.debug("menu_item: failed to resolve string token %s: %s", text_token, exc)
 
         item: Dict[str, Any] = {
             "id": item_id,
@@ -171,7 +171,29 @@ class SlimMenusMeta(AppletMeta):
         }
 
         if callback is not None:
-            item["callback"] = callback
+            # Wrap the callback so that the applet instance is loaded
+            # on demand and passed as the first argument — matching the
+            # base AppletMeta.menu_item behaviour.
+            applet_name = ""
+            if self._entry is not None:
+                applet_name = self._entry.get("applet_name", "")
+
+            _raw_cb = callback
+            _app_name = applet_name
+
+            def _wrapped_callback(event: Any = None, menu_item_arg: Any = None) -> Any:
+                from jive.applet_manager import applet_manager as _mgr
+
+                if _mgr is None:
+                    log.error("AppletManager not available for SlimMenus callback")
+                    return None
+                applet = _mgr.load_applet(_app_name)
+                if applet is None:
+                    log.error("Failed to load applet %s", _app_name)
+                    return None
+                return _raw_cb(applet, menu_item_arg)
+
+            item["callback"] = _wrapped_callback
 
         icon_style = f"hm_{item_id}"
         item["iconStyle"] = icon_style
@@ -182,7 +204,7 @@ class SlimMenusMeta(AppletMeta):
         return item
 
     # Lua alias
-    menuItem = menu_item
+    menuItem = menu_item  # type: ignore[assignment]
 
     # ------------------------------------------------------------------
     # Accessor helpers
@@ -199,8 +221,8 @@ class SlimMenusMeta(AppletMeta):
 
             if _jm is not None:
                 return getattr(_jm, "applet_manager", None)
-        except ImportError:
-            pass
+        except ImportError as exc:
+            log.debug("_get_applet_manager: jive_main not importable: %s", exc)
         return None
 
     def _get_jive_main(self) -> Any:
@@ -209,7 +231,8 @@ class SlimMenusMeta(AppletMeta):
             from jive.jive_main import jive_main as _jm
 
             return _jm
-        except ImportError:
+        except ImportError as exc:
+            log.debug("_get_jive_main: jive_main not importable: %s", exc)
             return None
 
     def _get_jnt(self) -> Any:
@@ -219,6 +242,6 @@ class SlimMenusMeta(AppletMeta):
 
             if _jm is not None:
                 return getattr(_jm, "jnt", None)
-        except ImportError:
-            pass
+        except ImportError as exc:
+            log.debug("_get_jnt: jive_main not importable: %s", exc)
         return None

@@ -86,6 +86,8 @@ class StickyMenu(SimpleMenu):
         expected dict format).
     """
 
+    __slots__ = ("_multiplier", "_sticky_down", "_sticky_up")
+
     def __init__(
         self,
         style: str,

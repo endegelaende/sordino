@@ -213,6 +213,15 @@ class AppletManager:
         applet_manager = self
 
     # ------------------------------------------------------------------
+    # System access
+    # ------------------------------------------------------------------
+
+    @property
+    def system(self) -> Optional["System"]:
+        """Return the :class:`System` instance, or ``None``."""
+        return self._system
+
+    # ------------------------------------------------------------------
     # Discovery
     # ------------------------------------------------------------------
 
@@ -392,7 +401,7 @@ class AppletManager:
             raise ImportError(f"Cannot import meta class for {applet_name}")
 
         # Set up the logger on the class
-        meta_class.log = entry["applet_logger"]
+        meta_class.log = entry["applet_logger"]  # type: ignore[attr-defined]
 
         # Instantiate the meta
         obj = meta_class()
@@ -417,7 +426,7 @@ class AppletManager:
                     entry["settings"] = {}
                 for k, v in global_defaults.items():
                     log.debug("Setting global default: %s=%s", k, v)
-                    entry["settings"][k] = v
+                    entry["settings"][k] = v  # type: ignore[index]
         else:
             entry["settings"] = obj.upgrade_settings(entry["settings"])
 
@@ -476,7 +485,7 @@ class AppletManager:
 
         # Already loaded?
         if entry["applet_evaluated"] and entry["applet_evaluated"] is not True:
-            return entry["applet_evaluated"]
+            return entry["applet_evaluated"]  # type: ignore[no-any-return]
 
         # Meta processed?
         if not entry["meta_registered"]:
@@ -487,7 +496,7 @@ class AppletManager:
 
         # Already loaded? (through meta calling load again)
         if entry["applet_evaluated"] and entry["applet_evaluated"] is not True:
-            return entry["applet_evaluated"]
+            return entry["applet_evaluated"]  # type: ignore[no-any-return]
 
         # Load and evaluate the applet
         if self._pload_applet(entry):
@@ -551,7 +560,7 @@ class AppletManager:
         if applet_class is None:
             raise ImportError(f"Cannot import applet class for {applet_name}")
 
-        applet_class.log = entry["applet_logger"]
+        applet_class.log = entry["applet_logger"]  # type: ignore[attr-defined]
 
         obj = applet_class()
 
@@ -565,7 +574,7 @@ class AppletManager:
         obj.init()
 
         entry["applet_evaluated"] = obj
-        return obj
+        return obj  # type: ignore[no-any-return]
 
     def _peval_applet(self, entry: Dict[str, Any]) -> Optional["Applet"]:
         """Protected call to _eval_applet."""
@@ -639,7 +648,7 @@ class AppletManager:
             return None
         evaluated = entry.get("applet_evaluated")
         if evaluated and evaluated is not True:
-            return evaluated
+            return evaluated  # type: ignore[no-any-return]
         return None
 
     def get_applet_db(self) -> Dict[str, Dict[str, Any]]:
@@ -777,8 +786,21 @@ class AppletManager:
             if settings is not None:
                 entry["settings"] = settings
 
-    def _store_settings(self, entry: Dict[str, Any]) -> None:
-        """Persist applet settings to disk as JSON."""
+    def _store_settings(self, entry: Any) -> None:
+        """Persist applet settings to disk as JSON.
+
+        *entry* may be either the full applet-database dict **or** a
+        plain applet-name string.  Several applets (SlimDiscovery,
+        SlimMenus, ChooseMusicSource) historically pass the name; we
+        resolve it to the DB entry here so that settings are actually
+        written to disk.
+        """
+        if isinstance(entry, str):
+            resolved = self._applets_db.get(entry)
+            if resolved is None:
+                log.error("_store_settings: unknown applet %r", entry)
+                return
+            entry = resolved
         applet_name = entry["applet_name"]
         log.info("store settings: %s", applet_name)
 
@@ -788,7 +810,9 @@ class AppletManager:
             return
 
         try:
-            content = json.dumps(settings, indent=2, ensure_ascii=False)
+            content = json.dumps(
+                settings, indent=2, ensure_ascii=False, default=self._json_default
+            )
             if self._system is not None:
                 self._system.atomic_write(filepath, content)
             else:
@@ -798,6 +822,24 @@ class AppletManager:
                     f.write(content)
         except Exception as exc:
             log.error("Error storing settings for %s: %s", applet_name, exc)
+
+    @staticmethod
+    def _json_default(obj: Any) -> Any:
+        """Custom JSON fallback for non-serializable objects.
+
+        Widget instances, callables, and other non-JSON-safe values can
+        end up in settings dicts (e.g. a RadioButton passed as a
+        positional argument to a closure).  Instead of crashing
+        ``_store_settings`` we skip these values with a warning and
+        store ``None``.
+        """
+        type_name = type(obj).__name__
+        log.warning(
+            "_store_settings: skipping non-serializable value %s (%r)",
+            type_name,
+            obj,
+        )
+        return None
 
     @staticmethod
     def _load_lua_settings(
@@ -836,24 +878,59 @@ class AppletManager:
     # ------------------------------------------------------------------
 
     def _load_locale_strings(self, entry: Dict[str, Any]) -> None:
-        """Load the strings.txt file for an applet."""
+        """Load the strings.txt file for an applet.
+
+        Searches for ``strings.txt`` in the applet's primary directory
+        first, then across all search paths under
+        ``applets/<applet_name>/strings.txt``.  This matches the Lua
+        original where assets and code can live in different search-path
+        roots (e.g. ``jive/applets/X/`` for code vs
+        ``share/jive/applets/X/`` for assets).
+        """
         if entry.get("strings_table") is not None:
             return  # Already loaded
 
         applet_name = entry["applet_name"]
         log.debug("_load_locale_strings: %s", applet_name)
 
+        if self._locale is None:
+            entry["strings_table"] = None
+            return
+
+        # 1. Try the primary applet directory
         strings_file = Path(entry["dirpath"]) / "strings.txt"
-        if self._locale is not None and strings_file.exists():
+        if strings_file.exists():
             try:
                 entry["strings_table"] = self._locale.read_strings_file(
                     str(strings_file)
                 )
+                return
             except Exception as exc:
                 log.error("Error loading strings for %s: %s", applet_name, exc)
-                entry["strings_table"] = None
-        else:
-            entry["strings_table"] = None
+
+        # 2. Search all search paths for applets/<name>/strings.txt
+        search_paths: List[Path] = []
+        if self._system is not None:
+            search_paths.extend(self._system.search_paths)
+
+        for base in search_paths:
+            candidate = base / "applets" / applet_name / "strings.txt"
+            if candidate.exists():
+                try:
+                    entry["strings_table"] = self._locale.read_strings_file(
+                        str(candidate)
+                    )
+                    log.debug("Loaded strings for %s from %s", applet_name, candidate)
+                    return
+                except Exception as exc:
+                    log.error(
+                        "Error loading strings for %s from %s: %s",
+                        applet_name,
+                        candidate,
+                        exc,
+                    )
+
+        entry["strings_table"] = None
 
     # ------------------------------------------------------------------
     # Load priority
@@ -873,8 +950,8 @@ class AppletManager:
                 try:
                     text = pf.read_text(encoding="utf-8").strip()
                     return int(text)
-                except (ValueError, OSError):
-                    pass
+                except (ValueError, OSError) as exc:
+                    log.debug("_read_load_priority: could not read %s: %s", pf, exc)
 
         # Try Lua format: loadPriority = <number>
         lua_file = applet_dir / "loadPriority.lua"
@@ -888,8 +965,8 @@ class AppletManager:
                         parts = line.split("=", 1)
                         if len(parts) == 2:
                             return int(parts[1].strip())
-            except (ValueError, OSError):
-                pass
+            except (ValueError, OSError) as exc:
+                log.debug("_read_load_priority: could not parse %s: %s", lua_file, exc)
 
         return 100
 
@@ -940,7 +1017,7 @@ class AppletManager:
             mod = sys.modules[module_name]
             cls = getattr(mod, class_name, None)
             if cls is not None:
-                return cls
+                return cls  # type: ignore[no-any-return]
 
         try:
             spec = importlib.util.spec_from_file_location(module_name, str(filepath))

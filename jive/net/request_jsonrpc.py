@@ -259,7 +259,7 @@ class RequestJsonRpc(RequestHttp):
         str
             The request ID.
         """
-        return self._json["id"]
+        return str(self._json["id"])
 
     # ------------------------------------------------------------------
     # Accessors for method and params (convenience)
@@ -268,12 +268,12 @@ class RequestJsonRpc(RequestHttp):
     @property
     def json_method(self) -> str:
         """The JSON-RPC method name."""
-        return self._json["method"]
+        return str(self._json["method"])
 
     @property
     def json_params(self) -> List[Any]:
         """The JSON-RPC params list."""
-        return self._json["params"]
+        return list(self._json["params"])
 
     # ------------------------------------------------------------------
     # Representation

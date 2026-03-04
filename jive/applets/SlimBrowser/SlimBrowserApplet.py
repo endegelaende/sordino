@@ -129,8 +129,8 @@ def _init_keycode_map() -> None:
         _KEYCODE_ACTION_NAME[KEY_VOLUME_DOWN] = "voldown"
         _KEYCODE_ACTION_NAME[KEY_FWD] = "fwd"
         _KEYCODE_ACTION_NAME[KEY_REW] = "rew"
-    except ImportError:
-        pass
+    except ImportError as exc:
+        log.debug("_init_keycode_map: UI constants not available: %s", exc)
 
 
 # ---------------------------------------------------------------------------
@@ -210,6 +210,29 @@ def _get_new_start_value(index: Optional[int]) -> int:
 
 
 # ---------------------------------------------------------------------------
+# Helper: get time format from SetupDateTime applet
+# ---------------------------------------------------------------------------
+
+
+def _get_time_format() -> str:
+    """Return the current time format setting ('12' or '24').
+
+    Loads ``setupDateTimeSettings`` from the applet manager and returns
+    the ``hours`` value.  Falls back to ``'12'`` if unavailable.
+    """
+    try:
+        from jive.applet_manager import applet_manager
+
+        if applet_manager is not None:
+            settings = applet_manager.call_service("setupDateTimeSettings")
+            if settings and isinstance(settings, dict) and settings.get("hours"):
+                return str(settings["hours"])
+    except (ImportError, AttributeError) as exc:
+        log.debug("_get_time_format: setupDateTimeSettings not available: %s", exc)
+    return "12"
+
+
+# ---------------------------------------------------------------------------
 # Step dict factory
 # ---------------------------------------------------------------------------
 
@@ -219,7 +242,7 @@ def _make_step(
     window: Any = None,
     menu: Any = None,
     db: Optional[DB] = None,
-    sink: Optional[Callable] = None,
+    sink: Optional[Callable[..., Any]] = None,
     data: Any = None,
     action_modifier: Optional[str] = None,
 ) -> Dict[str, Any]:
@@ -313,12 +336,14 @@ class SlimBrowserApplet(Applet):
 
         # Subscribe to notifications
         try:
-            from jive.net.network_thread import jnt
+            from jive.jive_main import jive_main as _jm
 
-            if jnt is not None:
-                jnt.subscribe(self)
-        except (ImportError, AttributeError):
-            pass
+            if _jm is not None:
+                jnt = getattr(_jm, "jnt", None)
+                if jnt is not None:
+                    jnt.subscribe(self)
+        except ImportError as exc:
+            log.error("init: failed to subscribe to jnt: %s", exc, exc_info=True)
 
         # Create Volume and Scanner helpers
         self.volume = Volume(self)
@@ -360,9 +385,9 @@ class SlimBrowserApplet(Applet):
                 try:
                     from jive.ui.window import Window
 
-                    Window.hideContextMenus()
-                except (ImportError, AttributeError):
-                    pass
+                    Window.hideContextMenus()  # type: ignore[attr-defined]
+                except (ImportError, AttributeError) as exc:
+                    log.debug("_push_step: hideContextMenus not available: %s", exc)
 
         # Remove duplicate (like window:hide does)
         if step in self._step_stack:
@@ -370,7 +395,7 @@ class SlimBrowserApplet(Applet):
 
         self._step_stack.append(step)
 
-        if log.isEnabledFor(10):  # DEBUG
+        if log.isEnabledFor(10):  # type: ignore[attr-defined]  # DEBUG
             log.debug("Pushed step, stack size: %d", len(self._step_stack))
 
     def _pop_step(self) -> Optional[Dict[str, Any]]:
@@ -378,7 +403,7 @@ class SlimBrowserApplet(Applet):
         if not self._step_stack:
             return None
         popped = self._step_stack.pop()
-        if log.isEnabledFor(10):
+        if log.isEnabledFor(10):  # type: ignore[attr-defined]
             log.debug("Popped step, stack size: %d", len(self._step_stack))
         return popped
 
@@ -609,6 +634,8 @@ class SlimBrowserApplet(Applet):
         icon = None
         if group is not None and hasattr(group, "getWidget"):
             icon = group.getWidget("icon")
+        elif group is not None and hasattr(group, "get_widget"):
+            icon = group.get_widget("icon")
 
         # Determine icon size
         icon_size = 40  # default THUMB_SIZE
@@ -623,8 +650,8 @@ class SlimBrowserApplet(Applet):
                         ps = _jm.get_skin_param_or_nil("THUMB_SIZE_PLAYLIST")
                         if ps is not None:
                             icon_size = ps
-        except (ImportError, AttributeError):
-            pass
+        except (ImportError, AttributeError) as exc:
+            log.debug("_update_artwork: could not get skin THUMB_SIZE: %s", exc)
 
         icon_id = item.get("icon-id") or item.get("icon")
 
@@ -667,7 +694,7 @@ class SlimBrowserApplet(Applet):
         try:
             from jive.ui.window import Window
 
-            return Window.createDefaultLeftButton()
+            return Window.createDefaultLeftButton()  # type: ignore[attr-defined]
         except (ImportError, AttributeError):
             return None
 
@@ -689,7 +716,7 @@ class SlimBrowserApplet(Applet):
             try:
                 from jive.ui.window import Window
 
-                return Window.createDefaultRightButton()
+                return Window.createDefaultRightButton()  # type: ignore[attr-defined]
             except (ImportError, AttributeError):
                 return None
 
@@ -703,15 +730,15 @@ class SlimBrowserApplet(Applet):
             return Button(
                 Group("button_go_now_playing", {"icon": Icon("icon")}),
                 lambda: (
-                    _fw.pushAction("go_now_playing") if _fw else None,
+                    _fw.pushAction("go_now_playing") if _fw else None,  # type: ignore[attr-defined]
                     EVENT_CONSUME,
                 )[-1],
                 lambda: (
-                    _fw.pushAction("title_right_hold") if _fw else None,
+                    _fw.pushAction("title_right_hold") if _fw else None,  # type: ignore[attr-defined]
                     EVENT_CONSUME,
                 )[-1],
                 lambda: (
-                    _fw.pushAction("soft_reset") if _fw else None,
+                    _fw.pushAction("soft_reset") if _fw else None,  # type: ignore[attr-defined]
                     EVENT_CONSUME,
                 )[-1],
             )
@@ -728,7 +755,7 @@ class SlimBrowserApplet(Applet):
         from_val: Optional[int],
         qty: Optional[int],
         step: Optional[Dict[str, Any]],
-        sink: Optional[Callable],
+        sink: Optional[Callable[..., Any]],
         item_type: Optional[str] = None,
         cached_response: Any = None,
     ) -> None:
@@ -775,10 +802,19 @@ class SlimBrowserApplet(Applet):
         # Build the request
         request: List[Any] = list(cmd_array)
 
+        # Always include from/qty positional params for browse-type
+        # commands.  LMS expects these before tagged params; omitting
+        # them can cause the server to return zero results.
         if from_val is not None:
             request.append(from_val)
-        if qty is not None:
-            request.append(qty)
+            if qty is not None:
+                request.append(qty)
+        elif new_params:
+            # Default from/qty so the server processes tagged params
+            # correctly (matches Lua behaviour where nil inserts are
+            # effectively 0 in the JSON-RPC positional array).
+            request.append(0)
+            request.append(200)
 
         for p in new_params:
             request.append(p)
@@ -805,8 +841,12 @@ class SlimBrowserApplet(Applet):
                     applet_manager.call_service(
                         "openRemoteScreensaver", True, server_data
                     )
-            except (ImportError, AttributeError):
-                pass
+            except (ImportError, AttributeError) as exc:
+                log.error(
+                    "_perform_json_action: failed to open remote screensaver: %s",
+                    exc,
+                    exc_info=True,
+                )
 
             current_step = self._get_current_step()
             if current_step is not None:
@@ -821,9 +861,11 @@ class SlimBrowserApplet(Applet):
             try:
                 from jive.system import System
 
-                has_tiny_sc = System.hasTinySC()
-            except (ImportError, AttributeError):
-                pass
+                has_tiny_sc = System.hasTinySC()  # type: ignore[attr-defined]
+            except (ImportError, AttributeError) as exc:
+                log.debug(
+                    "_perform_json_action: System.hasTinySC not available: %s", exc
+                )
 
             sc_running = False
             try:
@@ -831,8 +873,10 @@ class SlimBrowserApplet(Applet):
 
                 if applet_manager is not None:
                     sc_running = applet_manager.call_service("isBuiltInSCRunning")
-            except (ImportError, AttributeError):
-                pass
+            except (ImportError, AttributeError) as exc:
+                log.debug(
+                    "_perform_json_action: isBuiltInSCRunning not available: %s", exc
+                )
 
             if not (has_tiny_sc and sc_running):
                 log.warn("_networkError is not False, push error window for diags")
@@ -850,13 +894,19 @@ class SlimBrowserApplet(Applet):
                                 if menu is not None and hasattr(menu, "unlock"):
                                     menu.unlock()
                             return
-                except (ImportError, AttributeError):
-                    pass
+                except (ImportError, AttributeError) as exc:
+                    log.error(
+                        "_perform_json_action: failed to show network troubleshooting menu: %s",
+                        exc,
+                        exc_info=True,
+                    )
 
         # Send the command
         if not use_cached:
             if self._server is not None and hasattr(self._server, "userRequest"):
                 self._server.userRequest(sink, player_id, request)
+            else:
+                log.error("Cannot send: server=%s", self._server is not None)
         else:
             log.info("using cachedResponse")
             if sink is not None:
@@ -945,8 +995,8 @@ class SlimBrowserApplet(Applet):
 
                 if _fw is not None and hasattr(_fw, "playSound"):
                     _fw.playSound("WINDOWHIDE")
-            except ImportError:
-                pass
+            except ImportError as exc:
+                log.debug("_hide_me: framework not available for playSound: %s", exc)
 
         current = self._get_current_step()
         if current is not None:
@@ -1025,9 +1075,9 @@ class SlimBrowserApplet(Applet):
         try:
             from jive.ui.window import Window
 
-            Window.hideContextMenus()
-        except (ImportError, AttributeError):
-            pass
+            Window.hideContextMenus()  # type: ignore[attr-defined]
+        except (ImportError, AttributeError) as exc:
+            log.debug("_go_now_playing: hideContextMenus not available: %s", exc)
 
         # Hide NP child windows on top
         while True:
@@ -1042,8 +1092,10 @@ class SlimBrowserApplet(Applet):
                 from jive.ui.window import Window
 
                 transition = getattr(Window, "transitionPushLeft", None)
-            except ImportError:
-                pass
+            except ImportError as exc:
+                log.debug(
+                    "_go_now_playing: Window not available for transition: %s", exc
+                )
 
         if not silent:
             try:
@@ -1051,16 +1103,22 @@ class SlimBrowserApplet(Applet):
 
                 if _fw is not None and hasattr(_fw, "playSound"):
                     _fw.playSound("WINDOWSHOW")
-            except ImportError:
-                pass
+            except ImportError as exc:
+                log.debug(
+                    "_go_now_playing: framework not available for playSound: %s", exc
+                )
 
         try:
             from jive.applet_manager import applet_manager
 
             if applet_manager is not None:
                 applet_manager.call_service("goNowPlaying", transition, direct)
-        except (ImportError, AttributeError):
-            pass
+        except (ImportError, AttributeError) as exc:
+            log.error(
+                "_go_now_playing: failed to call goNowPlaying service: %s",
+                exc,
+                exc_info=True,
+            )
 
     def _go_playlist(self, silent: bool = False) -> None:
         """Navigate to the playlist screen."""
@@ -1070,8 +1128,10 @@ class SlimBrowserApplet(Applet):
 
                 if _fw is not None and hasattr(_fw, "playSound"):
                     _fw.playSound("WINDOWSHOW")
-            except ImportError:
-                pass
+            except ImportError as exc:
+                log.debug(
+                    "_go_playlist: framework not available for playSound: %s", exc
+                )
         self.show_playlist()
 
     def _go_now(self, destination: str, transition: Any = None) -> None:
@@ -1081,8 +1141,8 @@ class SlimBrowserApplet(Applet):
                 from jive.ui.window import Window
 
                 transition = getattr(Window, "transitionPushRight", None)
-            except ImportError:
-                pass
+            except ImportError as exc:
+                log.debug("_go_now: Window not available for transition: %s", exc)
 
         if destination == "nowPlaying":
             self._go_now_playing(transition)
@@ -1102,10 +1162,9 @@ class SlimBrowserApplet(Applet):
         err: Optional[str] = None,
     ) -> None:
         """Sink that processes browsing data for a step."""
-        log.debug("_browse_sink()")
 
         if step.get("cancelled"):
-            log.debug("_browse_sink(): ignoring data, action cancelled")
+            log.debug("_browse_sink: cancelled — ignoring response")
             return
 
         # Call loaded callback
@@ -1289,7 +1348,7 @@ class SlimBrowserApplet(Applet):
         def _scroll_down() -> int:
             from jive.ui.event import Event
 
-            e = Event(EVENT_SCROLL, -1)
+            e = Event(EVENT_SCROLL, rel=-1)
             if _fw is not None and hasattr(_fw, "dispatchEvent"):
                 _fw.dispatchEvent(slider, e)
             return EVENT_CONSUME
@@ -1297,7 +1356,7 @@ class SlimBrowserApplet(Applet):
         def _scroll_up() -> int:
             from jive.ui.event import Event
 
-            e = Event(EVENT_SCROLL, 1)
+            e = Event(EVENT_SCROLL, rel=1)
             if _fw is not None and hasattr(_fw, "dispatchEvent"):
                 _fw.dispatchEvent(slider, e)
             return EVENT_CONSUME
@@ -1308,12 +1367,218 @@ class SlimBrowserApplet(Applet):
                 {
                     "div1": Icon("div1"),
                     "div2": Icon("div2"),
-                    "down": Button(Icon("down"), _scroll_down),
+                    "down": Button(Icon("down"), _scroll_down),  # type: ignore[dict-item]
                     "slider": slider,
-                    "up": Button(Icon("up"), _scroll_up),
+                    "up": Button(Icon("up"), _scroll_up),  # type: ignore[dict-item]
                 },
             )
         )
+
+    # ==================================================================
+    # Input-in-progress popup
+    # ==================================================================
+
+    @staticmethod
+    def _input_in_progress(msg: Optional[str] = None) -> None:
+        """Show a 'waiting' popup while text-input action completes.
+
+        Mirrors Lua ``_inputInProgress``.
+        """
+        try:
+            from jive.ui.icon import Icon
+            from jive.ui.label import Label
+            from jive.ui.popup import Popup
+
+            popup = Popup("waiting_popup")
+            icon = Icon("icon_connecting")
+            popup.addWidget(icon)
+            if msg:
+                label = Label("text", msg)
+                popup.addWidget(label)
+            popup.show()
+        except ImportError:
+            log.info("_input_in_progress: UI not available, msg=%s", msg)
+
+    # camelCase alias
+    _inputInProgress = _input_in_progress
+
+    # ==================================================================
+    # Browse input (text input / keyboard for server-driven forms)
+    # ==================================================================
+
+    def _browse_input(
+        self,
+        window: Any,
+        item: Dict[str, Any],
+        db: DB,
+        input_spec: Optional[Dict[str, Any]],
+        last: Any = None,
+        time_format: Optional[str] = None,
+    ) -> bool:
+        """Render a text-input / keyboard for SlimBrowser input.
+
+        Mirrors Lua ``_browseInput``.  Creates the appropriate input
+        widget (time, IP address, or general text) inside *window* and
+        wires up the submit callback to ``_action_handler``.
+
+        Returns ``True`` if the title widget was fully configured.
+        """
+        title_widget_complete = False
+
+        if input_spec is None:
+            log.error("_browse_input: no input spec")
+            return False
+
+        # Never allow screensavers in an input window
+        if hasattr(window, "setAllowScreensaver"):
+            window.setAllowScreensaver(False)
+        if input_spec.get("title") and hasattr(window, "setTitle"):
+            window.setTitle(input_spec["title"])
+
+        # Title bar buttons
+        now_playing_button = None
+        if input_spec.get("setupWindow") == 1:
+            now_playing_button = self._invisible_button()
+        else:
+            now_playing_button = self._now_playing_button()
+
+        title_text = None
+        if hasattr(window, "getTitle"):
+            title_text = window.getTitle()
+        if input_spec.get("title"):
+            title_text = input_spec["title"]
+
+        if title_text:
+            title_widget_complete = True
+
+        try:
+            from jive.ui.group import Group
+            from jive.ui.label import Label
+
+            new_title_widget = Group(
+                "title",
+                {
+                    "text": Label("text", title_text or ""),
+                    "lbutton": self._back_button(),
+                    "rbutton": now_playing_button,
+                },
+            )
+            if hasattr(window, "setTitleWidget"):
+                window.setTitleWidget(new_title_widget)
+        except ImportError:
+            log.info("_browse_input: Group/Label not available for title widget")
+
+        # Make sure len is numeric
+        input_len = input_spec.get("len")
+        if input_len is not None:
+            try:
+                input_spec["len"] = int(input_len)
+            except (TypeError, ValueError):
+                input_spec["len"] = 0
+
+        # Default allowedChars
+        if not input_spec.get("allowedChars"):
+            kb_type = input_spec.get("_kbType", "")
+            if kb_type and "email" in kb_type:
+                input_spec["allowedChars"] = self._str("ALLOWEDCHARS_EMAIL")
+            else:
+                input_spec["allowedChars"] = self._str("ALLOWEDCHARS_WITHCAPS")
+
+        v = ""
+        initial_text = input_spec.get("initialText")
+        input_style = input_spec.get("_inputStyle")
+
+        if initial_text is not None:
+            v = str(initial_text)
+
+        # Time input is handled specially
+        if input_style == "time":
+            log.info(
+                "_browse_input: time input requested (stub — full Timeinput not ported)"
+            )
+            # Time input requires the Timeinput widget which may not be
+            # fully available.  Log and return.
+            return True
+
+        try:
+            from jive.ui.group import Group
+            from jive.ui.keyboard import Keyboard
+            from jive.ui.textinput import Textinput
+        except ImportError:
+            log.info("_browse_input: Textinput/Keyboard widgets not available")
+            return title_widget_complete
+
+        # Build the input value
+        input_value: Any = v
+        if input_style == "ip":
+            if not initial_text:
+                initial_text = ""
+            if hasattr(Textinput, "ip_address_value"):
+                input_value = Textinput.ip_address_value(initial_text)
+            elif hasattr(Textinput, "ipAddressValue"):
+                input_value = Textinput.ipAddressValue(initial_text)
+        elif input_spec.get("len") and int(input_spec["len"]) > 0:
+            if hasattr(Textinput, "text_value"):
+                input_value = Textinput.text_value(v, int(input_spec["len"]), 200)
+            elif hasattr(Textinput, "textValue"):
+                input_value = Textinput.textValue(v, int(input_spec["len"]), 200)
+
+        # Create text input widget
+        def _on_text_complete(_ti: Any, value: Any) -> bool:
+            self._last_input = str(value)
+            item["_inputDone"] = str(value)
+
+            # Show processing popup if requested
+            display_popup = _safe_deref(input_spec, "processingPopup")
+            display_popup_text = _safe_deref(input_spec, "processingPopup", "text")
+            if display_popup:
+                self._input_in_progress(display_popup_text)
+
+            # Perform the action
+            self._action_handler(None, None, db, 0, None, "go", item)
+
+            # Close the text input if this is a "do" action
+            do_action = _safe_deref(item, "actions", "do")
+            next_window = item.get("nextWindow")
+
+            if do_action and not next_window:
+                if hasattr(window, "playSound"):
+                    window.playSound("WINDOWHIDE")
+                if hasattr(window, "hide"):
+                    window.hide()
+            else:
+                if hasattr(window, "playSound"):
+                    window.playSound("WINDOWSHOW")
+            return True
+
+        text_input = Textinput(
+            "textinput",
+            input_value,
+            _on_text_complete,
+            input_spec.get("allowedChars"),
+        )
+
+        # Keyboard
+        kb_type = input_spec.get("_kbType", "qwerty")
+        if kb_type == "qwertyLower":
+            kb_type = "qwerty"
+        keyboard = Keyboard("keyboard", kb_type, text_input)
+        backspace = Keyboard.backspace()
+        group = Group(
+            "keyboard_textinput",
+            {"textinput": text_input, "backspace": backspace},
+        )
+
+        if hasattr(window, "addWidget"):
+            window.addWidget(group)
+            window.addWidget(keyboard)
+        if hasattr(window, "focusWidget"):
+            window.focusWidget(group)
+
+        return title_widget_complete
+
+    # camelCase alias
+    _browseInput = _browse_input
 
     # ==================================================================
     # New destination
@@ -1324,10 +1589,10 @@ class SlimBrowserApplet(Applet):
         origin: Optional[Dict[str, Any]],
         item: Optional[Dict[str, Any]],
         window_spec: Dict[str, Any],
-        sink_fn: Callable,
+        sink_fn: Callable[..., Any],
         data: Any = None,
         container_context_menu: Any = None,
-    ) -> Tuple[Dict[str, Any], Callable]:
+    ) -> Tuple[Dict[str, Any], Callable[..., Any]]:
         """Create a new browsing destination (step + sink)."""
         log.debug("_new_destination()")
 
@@ -1342,7 +1607,7 @@ class SlimBrowserApplet(Applet):
             else:
                 from jive.ui.window import Window
 
-                window = Window(
+                window = Window(  # type: ignore[assignment]
                     window_spec.get("windowStyle", "text_list"),
                     None,
                     None,
@@ -1350,7 +1615,7 @@ class SlimBrowserApplet(Applet):
                 )
         except ImportError:
             log.info("_new_destination: UI not available, using stub window")
-            window = _WindowStub(window_spec)
+            window = _WindowStub(window_spec)  # type: ignore[assignment]
 
         menu = None
         if item is None or not item.get("input") or item.get("_inputDone"):
@@ -1358,9 +1623,9 @@ class SlimBrowserApplet(Applet):
             try:
                 from jive.ui.menu import Menu
 
-                menu = Menu(
+                menu = Menu(  # type: ignore[call-arg]
                     db.menu_style(),
-                    lambda m, s, w, tri, trs: self._browse_menu_renderer(
+                    lambda m, s, w, tri, trs: self._browse_menu_renderer(  # type: ignore[arg-type, return-value]
                         m, s, w, tri, trs
                     ),
                     lambda m, s, mi, dbi, evt: self._browse_menu_listener(
@@ -1369,7 +1634,7 @@ class SlimBrowserApplet(Applet):
                     lambda m, s, dbi, dbv: self._browse_menu_available(m, s, dbi, dbv),
                 )
             except ImportError:
-                menu = _MenuStub(db.menu_style())
+                menu = _MenuStub(db.menu_style())  # type: ignore[assignment]
 
             if window is not None and hasattr(window, "addWidget"):
                 window.addWidget(menu)
@@ -1406,8 +1671,10 @@ class SlimBrowserApplet(Applet):
                     self._pop_step()
 
                 window.addListener(EVENT_WINDOW_POP, _on_pop)
-            except ImportError:
-                pass
+            except ImportError as exc:
+                log.warning(
+                    "_new_destination: EVENT_WINDOW_POP constant not available: %s", exc
+                )
 
         # Create sink closure
         def _sink(chunk: Any, err: Any = None) -> None:
@@ -1419,7 +1686,7 @@ class SlimBrowserApplet(Applet):
 
     def _empty_destination(
         self, step: Optional[Dict[str, Any]] = None
-    ) -> Tuple[Dict[str, Any], Callable]:
+    ) -> Tuple[Dict[str, Any], Callable[..., Any]]:
         """Create a no-op destination that handles cancellation and loaded."""
         new_step: Dict[str, Any] = _make_step()
 
@@ -1436,8 +1703,321 @@ class SlimBrowserApplet(Applet):
         return new_step, _sink
 
     # ==================================================================
+    # Widget factories for interactive menu items
+    # ==================================================================
+
+    def _checkbox_item(self, item: Dict[str, Any], db: DB) -> Any:
+        """Return a Checkbox widget for *item*, creating it if needed.
+
+        Mirrors Lua ``_checkboxItem``.  The checkbox fires 'on'/'off'
+        actions through ``_action_handler`` when toggled.
+        """
+        checkbox_flag = item.get("checkbox")
+        if checkbox_flag is None:
+            return item.get("_jive_button")
+        try:
+            checkbox_flag = int(checkbox_flag)
+        except (TypeError, ValueError):
+            return item.get("_jive_button")
+
+        if item.get("_jive_button") is None:
+            try:
+                from jive.ui.checkbox import Checkbox
+
+                def _cb_callback(_cb: Any, is_selected: bool) -> None:
+                    log.debug("checkbox updated: %s", is_selected)
+                    if is_selected:
+                        log.info("ON: %s", is_selected)
+                        self._action_handler(None, None, db, 0, None, "on", item)
+                    else:
+                        log.info("OFF: %s", is_selected)
+                        self._action_handler(None, None, db, 0, None, "off", item)
+
+                item["_jive_button"] = Checkbox(
+                    "checkbox",
+                    _cb_callback,
+                    checkbox_flag == 1,
+                )
+            except ImportError:
+                log.info("_checkbox_item: Checkbox widget not available")
+        return item.get("_jive_button")
+
+    # camelCase alias
+    _checkboxItem = _checkbox_item
+
+    def _choice_item(self, item: Dict[str, Any], db: DB) -> Any:
+        """Return a Choice widget for *item*, creating it if needed.
+
+        Mirrors Lua ``_choiceItem``.  The choice widget fires the
+        ``do.choices[index]`` action through ``_action_handler``.
+        """
+        choice_flag = item.get("selectedIndex")
+        if choice_flag is None:
+            return item.get("_jive_button")
+        try:
+            choice_flag = int(choice_flag)
+        except (TypeError, ValueError):
+            return item.get("_jive_button")
+
+        choice_actions = _safe_deref(item, "actions", "do", "choices")
+        if choice_actions is None:
+            return item.get("_jive_button")
+
+        if item.get("_jive_button") is None:
+            try:
+                from jive.ui.choice import Choice
+
+                choice_strings = item.get("choiceStrings", [])
+
+                def _choice_callback(_ch: Any, index: int) -> None:
+                    log.info("Choice callback called: %s", index)
+                    self._action_handler(None, None, db, 0, None, "do", item, index)
+
+                item["_jive_button"] = Choice(
+                    "choice",
+                    choice_strings,
+                    _choice_callback,
+                    choice_flag,
+                )
+            except ImportError:
+                log.info("_choice_item: Choice widget not available")
+        return item.get("_jive_button")
+
+    # camelCase alias
+    _choiceItem = _choice_item
+
+    def _radio_item(self, item: Dict[str, Any], db: DB) -> Any:
+        """Return a RadioButton widget for *item*, creating it if needed.
+
+        Mirrors Lua ``_radioItem``.  The radio button fires the 'do'
+        action through ``_action_handler`` when selected.
+        """
+        radio_flag = item.get("radio")
+        if radio_flag is None:
+            return item.get("_jive_button")
+        try:
+            radio_flag = int(radio_flag)
+        except (TypeError, ValueError):
+            return item.get("_jive_button")
+
+        if item.get("_jive_button") is None:
+            try:
+                from jive.ui.radio import RadioButton
+
+                radio_group = db.get_radio_group()
+
+                def _radio_callback(*args: Any) -> None:
+                    log.info("Radio callback called")
+                    self._action_handler(None, None, db, 0, None, "do", item)
+
+                item["_jive_button"] = RadioButton(
+                    "radio",
+                    radio_group,
+                    _radio_callback,
+                    radio_flag == 1,
+                )
+            except ImportError:
+                log.info("_radio_item: RadioButton widget not available")
+        return item.get("_jive_button")
+
+    # camelCase alias
+    _radioItem = _radio_item
+
+    # ==================================================================
     # Browse menu callbacks (renderer, listener, available)
     # ==================================================================
+
+    def _decorated_label(
+        self,
+        group: Any,
+        label_style: str,
+        item: Optional[Dict[str, Any]],
+        step: Dict[str, Any],
+        menu_accel: bool = False,
+        show_icons: bool = True,
+    ) -> Any:
+        """Create or update a Group widget for a menu item.
+
+        Mirrors Lua ``_decoratedLabel`` in SlimBrowserApplet.lua.
+        """
+        from jive.ui.group import Group
+        from jive.ui.icon import Icon
+        from jive.ui.label import Label
+
+        db = step.get("db")
+        window_style = db.window_style() if db is not None else ""
+
+        # Determine if we should use a Textarea instead of Label
+        use_textarea = window_style == "multiline_text_list"
+
+        if group is None:
+            if label_style == "title":
+                # Title group has back/NP buttons instead of arrow/check
+                group = Group(
+                    label_style,
+                    {
+                        "text": Label("text", ""),
+                        "icon": Icon("icon"),
+                        "lbutton": self._back_button(),
+                        "rbutton": self._now_playing_button(),
+                    },
+                )
+            elif use_textarea:
+                try:
+                    from jive.ui.textarea import Textarea
+
+                    textarea = Textarea("multiline_text", "")
+                    if hasattr(textarea, "set_hide_scrollbar"):
+                        textarea.set_hide_scrollbar(True)
+                    elif hasattr(textarea, "setHideScrollbar"):
+                        textarea.setHideScrollbar(True)
+                    if hasattr(textarea, "set_is_menu_child"):
+                        textarea.set_is_menu_child(True)
+                    elif hasattr(textarea, "setIsMenuChild"):
+                        textarea.setIsMenuChild(True)
+                    group = Group(
+                        label_style,
+                        {
+                            "icon": Icon("icon"),
+                            "text": textarea,
+                            "arrow": Icon("arrow"),
+                            "check": Icon("check"),
+                        },
+                    )
+                except ImportError:
+                    # Textarea not available, fall back to Label
+                    text_label = Label("text", "")
+                    group = Group(
+                        label_style,
+                        {
+                            "text": text_label,
+                            "icon": Icon("icon"),
+                            "arrow": Icon("arrow"),
+                            "check": Icon("check"),
+                        },
+                    )
+            else:
+                # Standard item group with text, icon, arrow, check
+                text_label = Label("text", "")
+                group = Group(
+                    label_style,
+                    {
+                        "text": text_label,
+                        "icon": Icon("icon"),
+                        "arrow": Icon("arrow"),
+                        "check": Icon("check"),
+                    },
+                )
+
+        # Update the group with item data
+        if item is not None:
+            # Textarea items get a context-menu action for full text
+            if use_textarea:
+                try:
+                    from jive.ui.constants import EVENT_CONSUME
+                except ImportError:
+                    EVENT_CONSUME = 0x02  # type: ignore[assignment]
+
+                def _more_action(*_a: Any, **_kw: Any) -> int:
+                    try:
+                        from jive.ui.contextmenuwindow import ContextMenuWindow
+                        from jive.ui.textarea import Textarea as _Ta
+                        from jive.ui.window import Window as _W
+
+                        cmw = ContextMenuWindow("")
+                        txt = _Ta("multiline_text", item.get("text", ""))
+                        if hasattr(cmw, "addWidget"):
+                            cmw.addWidget(txt)
+                        elif hasattr(cmw, "add_widget"):
+                            cmw.add_widget(txt)
+                        if hasattr(cmw, "setShowFrameworkWidgets"):
+                            cmw.setShowFrameworkWidgets(False)
+                        elif hasattr(cmw, "set_show_framework_widgets"):
+                            cmw.set_show_framework_widgets(False)
+                        if hasattr(cmw, "show"):
+                            cmw.show(getattr(_W, "transitionFadeIn", None))
+                    except ImportError:
+                        pass
+                    return EVENT_CONSUME
+
+                if hasattr(group, "addActionListener"):
+                    group.addActionListener("add", step, _more_action)
+                    group.addActionListener("go", step, _more_action)
+                elif hasattr(group, "add_action_listener"):
+                    group.add_action_listener("add", step, _more_action)
+                    group.add_action_listener("go", step, _more_action)
+
+            text = item.get("text", "")
+            try:
+                group.set_widget_value("text", text)
+            except (KeyError, AttributeError) as exc:
+                log.debug("_decorated_label: failed to set text widget value: %s", exc)
+
+            # Determine the icon style based on window type
+            icon_style = "icon_no_artwork"
+            if window_style == "play_list":
+                icon_style = "icon_no_artwork_playlist"
+
+            if show_icons:
+                # Set "no artwork" icon unless it's already the right style
+                icon_widget = group.get_widget("icon")
+                if icon_widget is not None:
+                    cur_style = ""
+                    if hasattr(icon_widget, "get_style"):
+                        cur_style = icon_widget.get_style() or ""
+                    elif hasattr(icon_widget, "getStyle"):
+                        cur_style = icon_widget.getStyle() or ""
+                    if cur_style != icon_style:
+                        group.set_widget("icon", Icon(icon_style))
+
+            # Set acceleration key (for fast-scrolling letter jumps)
+            accel_key = item.get("textkey")
+            if accel_key is None and isinstance(item.get("params"), dict):
+                accel_key = item["params"].get("textkey")
+            if accel_key is not None and hasattr(group, "set_accel_key"):
+                group.set_accel_key(accel_key)
+            elif accel_key is not None and hasattr(group, "setAccelKey"):
+                group.setAccelKey(accel_key)
+
+            # Handle checkbox / radio / choice items
+            if item.get("radio"):
+                group._type = "radio"
+                group.set_widget("check", self._radio_item(item, db))
+            elif item.get("checkbox"):
+                group._type = "checkbox"
+                group.set_widget("check", self._checkbox_item(item, db))
+            elif item.get("selectedIndex"):
+                group._type = "choice"
+                group.set_widget("check", self._choice_item(item, db))
+            else:
+                # Clear previous type if any
+                if getattr(group, "_type", None):
+                    if show_icons:
+                        group.set_widget("icon", Icon(icon_style))
+                    group._type = None
+                # Fetch artwork for this item
+                self._artwork_item(step, item, group, menu_accel)
+
+            group.set_style(label_style)
+        else:
+            # No data yet — clear type and show waiting placeholder
+            if getattr(group, "_type", None):
+                icon_style = "icon_no_artwork"
+                if window_style == "play_list":
+                    icon_style = "icon_no_artwork_playlist"
+                if show_icons:
+                    group.set_widget("icon", Icon(icon_style))
+                group._type = None
+
+            try:
+                group.set_widget_value("text", "")
+            except (KeyError, AttributeError) as exc:
+                log.debug(
+                    "_decorated_label: failed to clear text widget value: %s", exc
+                )
+            group.set_style(label_style + "waiting_popup")
+
+        return group
 
     def _browse_menu_renderer(
         self,
@@ -1450,9 +2030,25 @@ class SlimBrowserApplet(Applet):
         """Render menu items for the browsing menu."""
         db = step.get("db")
         if db is None:
+            log.warning("_browse_menu_renderer: db is None in step, skipping render")
             return
 
         label_item_style = db.label_item_style()
+
+        log.debug(
+            "_browse_menu_renderer: to_render_size=%d indexes=%s "
+            "db.count=%d db.current_index=%d label_item_style=%s "
+            "window_style=%s widgets_len=%d",
+            to_render_size,
+            to_render_indexes[:10]
+            if isinstance(to_render_indexes, (list, tuple))
+            else to_render_indexes,
+            db.count,
+            db.current_index,
+            label_item_style,
+            db.window_style(),
+            len(widgets),
+        )
 
         menu_accel = False
         accel_dir = 0
@@ -1466,6 +2062,9 @@ class SlimBrowserApplet(Applet):
         if menu_accel and self._server is not None:
             if hasattr(self._server, "cancelAllArtwork"):
                 self._server.cancelAllArtwork()
+
+        window_style = db.window_style()
+        show_icons = window_style != "text_list"
 
         for widget_index in range(to_render_size):
             if isinstance(to_render_indexes, (list, tuple)):
@@ -1493,6 +2092,61 @@ class SlimBrowserApplet(Applet):
                     or item_data.get("selectedIndex")
                 ):
                     style = "item_choice"
+
+                # Get or create the widget for this slot
+                existing = (
+                    widgets[widget_index] if widget_index < len(widgets) else None
+                )
+
+                log.debug(
+                    "_browse_menu_renderer: widget_index=%d db_index=%d "
+                    "style=%s current=%s has_data=%s text=%s",
+                    widget_index,
+                    db_index,
+                    style,
+                    current,
+                    item_data is not None,
+                    (item_data.get("text", "")[:40] if item_data else "N/A"),
+                )
+
+                widget = self._decorated_label(
+                    existing, style, item_data, step, menu_accel, show_icons
+                )
+                # Store in widgets list
+                if widget_index < len(widgets):
+                    widgets[widget_index] = widget
+                else:
+                    while len(widgets) <= widget_index:
+                        widgets.append(None)
+                    widgets[widget_index] = widget
+
+        # -- Preload artwork in the direction of scrolling ----------------
+        # Matches Lua _browseMenuRenderer L2455-2471:
+        #   Fetches artwork for the next screenful of items (without a
+        #   widget) so the cache is warm when the user scrolls.
+        if menu_accel or to_render_size == 0:
+            return
+
+        if isinstance(to_render_indexes, (list, tuple)) and to_render_indexes:
+            if accel_dir > 0:
+                start_index = (
+                    to_render_indexes[to_render_size - 1]
+                    if to_render_size <= len(to_render_indexes)
+                    else to_render_indexes[-1]
+                )
+            else:
+                first_idx = to_render_indexes[0] if to_render_indexes else 0
+                start_index = first_idx - to_render_size
+
+            for db_index in range(start_index, start_index + to_render_size):
+                if db_index < 0:
+                    continue
+                try:
+                    item_data, _current = db.item(db_index)
+                except Exception:
+                    item_data = None
+                if item_data:
+                    self._artwork_item(step, item_data, None, False)
 
     def _browse_menu_listener(
         self,
@@ -1594,7 +2248,7 @@ class SlimBrowserApplet(Applet):
                 if func is not None:
                     if menu_item is not None and hasattr(menu_item, "playSound"):
                         menu_item.playSound("WINDOWSHOW")
-                    return func()
+                    return func()  # type: ignore[no-any-return]
                 return self._action_handler(
                     menu, menu_item, db, db_index, event, "go", item_data
                 )
@@ -1606,7 +2260,7 @@ class SlimBrowserApplet(Applet):
                 action_str = event.getAction() or ""
             elif hasattr(event, "get_action"):
                 action_str = event.get_action() or ""
-            action_name = _ACTION_TO_ACTION_NAME.get(action_str)
+            action_name = _ACTION_TO_ACTION_NAME.get(action_str)  # type: ignore[assignment]
             if action_name is not None:
                 return self._action_handler(
                     menu, menu_item, db, db_index, event, action_name, item_data
@@ -1618,7 +2272,7 @@ class SlimBrowserApplet(Applet):
             if hasattr(event, "getKeycode"):
                 keycode = event.getKeycode()
             _init_keycode_map()
-            action_name = _KEYCODE_ACTION_NAME.get(keycode)
+            action_name = _KEYCODE_ACTION_NAME.get(keycode)  # type: ignore[assignment]
             if action_name is not None:
                 return self._action_handler(
                     menu, menu_item, db, db_index, event, action_name, item_data
@@ -1630,7 +2284,7 @@ class SlimBrowserApplet(Applet):
             if hasattr(event, "getKeycode"):
                 keycode = event.getKeycode()
             _init_keycode_map()
-            action_name = _KEYCODE_ACTION_NAME.get(keycode)
+            action_name = _KEYCODE_ACTION_NAME.get(keycode)  # type: ignore[assignment]
             if action_name is not None:
                 return self._action_handler(
                     menu,
@@ -1685,8 +2339,8 @@ class SlimBrowserApplet(Applet):
         try:
             from jive.ui.constants import EVENT_CONSUME, EVENT_UNUSED
         except ImportError:
-            EVENT_CONSUME = 0x02
-            EVENT_UNUSED = 0x00
+            EVENT_CONSUME = 0x02  # type: ignore[assignment]
+            EVENT_UNUSED = 0x00  # type: ignore[assignment]
 
         # Some actions work even with no item around
         if item is not None:
@@ -1771,8 +2425,13 @@ class SlimBrowserApplet(Applet):
                             applet_manager.call_service(
                                 local_service, {"text": item.get("text")}
                             )
-                    except (ImportError, AttributeError):
-                        pass
+                    except (ImportError, AttributeError) as exc:
+                        log.error(
+                            "_action_handler: failed to call local service %s: %s",
+                            local_service,
+                            exc,
+                            exc_info=True,
+                        )
                     return EVENT_CONSUME
 
                 # Check for 'do' action (overrides 'go')
@@ -1784,6 +2443,14 @@ class SlimBrowserApplet(Applet):
             elif action_name == "preview":
                 b_action = _safe_deref(chunk, "base", "actions", "preview")
                 i_action = _safe_deref(item, "actions", "preview")
+
+            # Determine isContextMenu flag (Lua computes this after
+            # action_name aliasing, before the main if-block).
+            is_context_menu = _safe_deref(
+                item, "actions", action_name, "params", "isContextMenu"
+            ) or _safe_deref(
+                chunk, "base", "actions", action_name, "window", "isContextMenu"
+            )
 
             choice_action = _safe_deref(item, "actions", "do", "choices")
 
@@ -1815,13 +2482,17 @@ class SlimBrowserApplet(Applet):
             if set_index is not None and not next_window:
                 next_window = "refresh"
 
-            if i_action or b_action or choice_action or use_next_window:
+            if i_action or b_action or choice_action or next_window:
                 json_action = None
 
                 # Choice action
                 if choice_action and selected_index is not None:
                     json_action = _safe_deref(
-                        item, "actions", action_name, "choices", selected_index
+                        item,
+                        "actions",
+                        action_name,
+                        "choices",
+                        selected_index,  # type: ignore[arg-type]
                     )
                 elif i_action:
                     log.debug("_action_handler(%s): item action", action_name)
@@ -1853,6 +2524,7 @@ class SlimBrowserApplet(Applet):
                 # Now we may have found a command
                 if json_action is not None or use_next_window:
                     log.debug("_action_handler(%s): json action", action_name)
+
                     if menu_item is not None and not (
                         next_window and next_window == "home"
                     ):
@@ -1861,7 +2533,7 @@ class SlimBrowserApplet(Applet):
 
                     skip_push = False
                     step_new: Optional[Dict[str, Any]] = None
-                    sink_new: Optional[Callable] = None
+                    sink_new: Optional[Callable[..., Any]] = None
                     from_val: Optional[int] = None
                     qty_val: Optional[int] = None
 
@@ -1879,12 +2551,18 @@ class SlimBrowserApplet(Applet):
                     elif next_window == "home":
                         if item.get("serverLinked") and self._server is not None:
                             try:
-                                from jive.net.network_thread import jnt
+                                from jive.net.network_thread import (
+                                    jnt,  # type: ignore[attr-defined]
+                                )
 
                                 if jnt is not None:
                                     jnt.notify("serverLinked", self._server, True)
-                            except (ImportError, AttributeError):
-                                pass
+                            except (ImportError, AttributeError) as exc:
+                                log.error(
+                                    "_action_handler: failed to notify serverLinked: %s",
+                                    exc,
+                                    exc_info=True,
+                                )
                         self.go_home()
 
                     elif next_window == "parentNoRefresh":
@@ -1902,9 +2580,12 @@ class SlimBrowserApplet(Applet):
                             try:
                                 from jive.ui.window import Window
 
-                                Window.hideContextMenus()
-                            except (ImportError, AttributeError):
-                                pass
+                                Window.hideContextMenus()  # type: ignore[attr-defined]
+                            except (ImportError, AttributeError) as exc:
+                                log.debug(
+                                    "_action_handler: hideContextMenus not available: %s",
+                                    exc,
+                                )
                             self._refresh_me(set_index)
                         else:
                             self._hide_me_and_my_dad(set_index)
@@ -1917,17 +2598,9 @@ class SlimBrowserApplet(Applet):
                     elif next_window:
                         from_val, qty_val = 0, 200
                         self._hide_to_x(next_window, set_index)
+
                     elif action_name in ("go", "play-hold"):
-                        is_cm = _safe_deref(
-                            item, "actions", action_name, "params", "isContextMenu"
-                        ) or _safe_deref(
-                            chunk,
-                            "base",
-                            "actions",
-                            action_name,
-                            "window",
-                            "isContextMenu",
-                        )
+                        is_cm = is_context_menu
                         step_new, sink_new = self._new_destination(
                             self._get_current_step(),
                             item,
@@ -1937,19 +2610,28 @@ class SlimBrowserApplet(Applet):
                         )
                         if step_new.get("menu"):
                             from_val, qty_val = self._decide_first_chunk(
-                                step_new, json_action
+                                step_new,
+                                json_action,  # type: ignore[arg-type]
                             )
-                    elif action_name == "more" or (
-                        action_name == "add"
-                        and (
-                            item.get("addAction") == "more"
-                            or _safe_deref(chunk, "base", "addAction") == "more"
+                    elif (
+                        action_name == "more"
+                        or (
+                            action_name == "add"
+                            and (
+                                item.get("addAction") == "more"
+                                or _safe_deref(chunk, "base", "addAction") == "more"
+                            )
                         )
+                        or is_context_menu
                     ):
                         log.debug("Context Menu")
-                        is_cm = _safe_deref(
-                            item, "actions", action_name, "params", "isContextMenu"
-                        )
+                        # Bug 14061: send command flag to have XMLBrowser
+                        # fork CM response off to get playback controls
+                        if json_action is not None and isinstance(json_action, dict):
+                            params = json_action.get("params")
+                            if params and isinstance(params, dict):
+                                params["xmlBrowseInterimCM"] = 1
+                        is_cm = is_context_menu
                         step_new, sink_new = self._new_destination(
                             self._get_current_step(),
                             item,
@@ -1959,7 +2641,8 @@ class SlimBrowserApplet(Applet):
                         )
                         if step_new.get("menu"):
                             from_val, qty_val = self._decide_first_chunk(
-                                step_new, json_action
+                                step_new,
+                                json_action,  # type: ignore[arg-type]
                             )
 
                     if json_action is not None:
@@ -1987,20 +2670,109 @@ class SlimBrowserApplet(Applet):
             func = self._get_default_action(built_in)
             if func is not None:
                 log.debug("_action_handler(%s): built-in", built_in)
-                return func(menu, menu_item, db, db_index, event, built_in, item)
+                return func(menu, menu_item, db, db_index, event, built_in, item)  # type: ignore[no-any-return]
 
         func = self._get_default_action(action_name)
         if func is not None:
             log.debug("_action_handler(%s): built-in", action_name)
-            return func(menu, menu_item, db, db_index, event, action_name, item)
+            return func(menu, menu_item, db, db_index, event, action_name, item)  # type: ignore[no-any-return]
 
         return EVENT_UNUSED
+
+    # ==================================================================
+    # Alarm preview window
+    # ==================================================================
+
+    def _alarm_preview_window(self, title: str) -> int:
+        """Show a preview popup for an alarm sound.
+
+        Mirrors Lua ``_alarmPreviewWindow``.  Displays the alarm title
+        and a 'Done' button that stops the preview and hides the window.
+        """
+        try:
+            from jive.ui.constants import EVENT_CONSUME, EVENT_WINDOW_POP
+            from jive.ui.group import Group
+            from jive.ui.icon import Icon
+            from jive.ui.label import Label
+            from jive.ui.simplemenu import SimpleMenu
+            from jive.ui.window import Window
+        except ImportError:
+            log.info("_alarm_preview_window: UI not available")
+            return 0x02  # EVENT_CONSUME fallback
+
+        window = Window("alarm_popup", self._str("SLIMBROWSER_ALARM_PREVIEW"))
+        icon = Icon("icon_alarm")
+        label = Label("preview_text", title)
+        header_group = Group("alarm_header", {"icon": icon, "time": label})
+
+        def _hide_action(*args: Any) -> int:
+            log.warn("hide alarm preview")
+            if hasattr(window, "hide"):
+                window.hide(getattr(Window, "transitionNone", None))
+            return EVENT_CONSUME
+
+        def _window_pop_action(evt: Any = None) -> int:
+            log.warn("window goes pop!")
+            if self._player is not None and hasattr(self._player, "stopPreview"):
+                self._player.stopPreview()
+            return EVENT_CONSUME
+
+        menu = SimpleMenu("menu")
+        menu.addItem(
+            {
+                "text": self._str("SLIMBROWSER_DONE"),
+                "sound": "WINDOWHIDE",
+                "callback": _hide_action,
+            }
+        )
+
+        if hasattr(window, "ignoreAllInputExcept"):
+            window.ignoreAllInputExcept(
+                [
+                    "go",
+                    "back",
+                    "go_home",
+                    "go_home_or_now_playing",
+                    "volume_up",
+                    "volume_down",
+                    "stop",
+                    "pause",
+                    "power",
+                ]
+            )
+
+        if hasattr(window, "addListener"):
+            window.addListener(EVENT_WINDOW_POP, _window_pop_action)
+
+        if hasattr(menu, "setHeaderWidget"):
+            menu.setHeaderWidget(header_group)
+
+        if hasattr(window, "setButtonAction"):
+            window.setButtonAction("rbutton", "cancel")
+        if hasattr(window, "addActionListener"):
+            window.addActionListener("cancel", window, _hide_action)
+
+        if hasattr(window, "setButtonAction"):
+            window.setButtonAction("lbutton", None, None)
+
+        window.addWidget(menu)
+        if hasattr(window, "setShowFrameworkWidgets"):
+            window.setShowFrameworkWidgets(False)
+        if hasattr(window, "setAllowScreensaver"):
+            window.setAllowScreensaver(False)
+        if hasattr(window, "show"):
+            window.show(getattr(Window, "transitionFadeIn", None))
+
+        return EVENT_CONSUME
+
+    # camelCase alias
+    _alarmPreviewWindow = _alarm_preview_window
 
     # ==================================================================
     # Default actions
     # ==================================================================
 
-    def _get_default_action(self, action_name: str) -> Optional[Callable]:
+    def _get_default_action(self, action_name: str) -> Optional[Callable[..., Any]]:
         """Return the built-in default action handler, or None."""
         defaults = {
             "play-status": self._default_play_status,
@@ -2024,7 +2796,7 @@ class SlimBrowserApplet(Applet):
         try:
             from jive.ui.constants import EVENT_CONSUME
         except ImportError:
-            EVENT_CONSUME = 0x02
+            EVENT_CONSUME = 0x02  # type: ignore[assignment]
 
         if self._player is not None:
             is_paused = False
@@ -2066,7 +2838,7 @@ class SlimBrowserApplet(Applet):
         try:
             from jive.ui.constants import EVENT_CONSUME
         except ImportError:
-            EVENT_CONSUME = 0x02
+            EVENT_CONSUME = 0x02  # type: ignore[assignment]
 
         if self._player is not None:
             if hasattr(self._player, "playlistDeleteIndex"):
@@ -2089,7 +2861,7 @@ class SlimBrowserApplet(Applet):
         try:
             from jive.ui.constants import EVENT_CONSUME
         except ImportError:
-            EVENT_CONSUME = 0x02
+            EVENT_CONSUME = 0x02  # type: ignore[assignment]
 
         if self._player is not None:
             if hasattr(self._player, "playlistZapIndex"):
@@ -2099,17 +2871,82 @@ class SlimBrowserApplet(Applet):
         return EVENT_CONSUME
 
     # ==================================================================
+    # Menu table navigation helper
+    # ==================================================================
+
+    @staticmethod
+    def _go_menu_table_item(key: str) -> None:
+        """Navigate to a home-menu entry by its key.
+
+        Mirrors Lua ``_goMenuTableItem``.  If the target window is
+        already on top, bumps it left; otherwise invokes its callback.
+        """
+        try:
+            from jive.jive_main import jive_main as _jm
+            from jive.ui.framework import framework as _fw
+            from jive.ui.window import Window
+
+            if _jm is None:
+                return
+            menu_table = (
+                _jm.get_menu_table()
+                if hasattr(_jm, "get_menu_table")
+                else (_jm.getMenuTable() if hasattr(_jm, "getMenuTable") else None)
+            )
+            if menu_table is None or key not in menu_table:
+                return
+
+            top_window = None
+            if hasattr(Window, "getTopNonTransientWindow"):
+                top_window = Window.getTopNonTransientWindow()
+
+            if (
+                top_window is not None
+                and hasattr(top_window, "getWindowId")
+                and top_window.getWindowId() == key
+            ):
+                if _fw is not None and hasattr(_fw, "playSound"):
+                    _fw.playSound("BUMP")
+                if hasattr(top_window, "bumpLeft"):
+                    top_window.bumpLeft()
+            else:
+                if _fw is not None and hasattr(_fw, "playSound"):
+                    _fw.playSound("JUMP")
+                entry = menu_table[key]
+                callback = (
+                    entry.get("callback")
+                    if isinstance(entry, dict)
+                    else getattr(entry, "callback", None)
+                )
+                if callback is not None:
+                    callback(None, None, True)
+        except (ImportError, AttributeError) as exc:
+            log.debug("_go_menu_table_item: not available: %s", exc)
+
+    # camelCase alias
+    _goMenuTableItem = _go_menu_table_item
+
+    # ==================================================================
     # Global actions
     # ==================================================================
 
     def _install_action_listeners(self) -> None:
         """Install global action listeners for transport controls."""
         if self._action_listener_handles is not None:
+            log.debug(
+                "_install_action_listeners: already installed (%d handles)",
+                len(self._action_listener_handles),
+            )
             return
 
         self._action_listener_handles = []
 
         action_map = self._build_global_actions()
+        log.info(
+            "_install_action_listeners: registering %d global actions: %s",
+            len(action_map),
+            list(action_map.keys()),
+        )
 
         try:
             from jive.ui.framework import framework as _fw
@@ -2119,8 +2956,32 @@ class SlimBrowserApplet(Applet):
                     handle = _fw.addActionListener(action_str, self, func, False)
                     if handle is not None:
                         self._action_listener_handles.append(handle)
-        except ImportError:
-            pass
+                        log.debug(
+                            "_install_action_listeners: registered %r -> handle=%s",
+                            action_str,
+                            handle,
+                        )
+                    else:
+                        log.warning(
+                            "_install_action_listeners: addActionListener(%r) returned None!",
+                            action_str,
+                        )
+                log.info(
+                    "_install_action_listeners: done, %d handles installed",
+                    len(self._action_listener_handles),
+                )
+            else:
+                log.warning(
+                    "_install_action_listeners: framework=%s, hasattr(addActionListener)=%s",
+                    _fw,
+                    hasattr(_fw, "addActionListener") if _fw else "N/A",
+                )
+        except ImportError as exc:
+            log.error(
+                "_install_action_listeners: framework not available: %s",
+                exc,
+                exc_info=True,
+            )
 
     def _remove_action_listeners(self) -> None:
         """Remove global action listeners."""
@@ -2134,18 +2995,18 @@ class SlimBrowserApplet(Applet):
                 for handle in self._action_listener_handles:
                     if hasattr(_fw, "removeListener"):
                         _fw.removeListener(handle)
-        except ImportError:
-            pass
+        except ImportError as exc:
+            log.debug("_remove_action_listeners: framework not available: %s", exc)
 
         self._action_listener_handles = None
 
-    def _build_global_actions(self) -> Dict[str, Callable]:
+    def _build_global_actions(self) -> Dict[str, Callable[..., Any]]:
         """Build the global action handler map."""
         try:
             from jive.ui.constants import EVENT_CONSUME, EVENT_UNUSED
         except ImportError:
-            EVENT_CONSUME = 0x02
-            EVENT_UNUSED = 0x00
+            EVENT_CONSUME = 0x02  # type: ignore[assignment]
+            EVENT_UNUSED = 0x00  # type: ignore[assignment]
 
         def _go_now_playing_action(*args: Any) -> int:
             self._go_now("nowPlaying")
@@ -2160,40 +3021,65 @@ class SlimBrowserApplet(Applet):
             return EVENT_CONSUME
 
         def _play_action(*args: Any) -> int:
+            log.info("_play_action: called, player=%s", self._player)
             if self._player is None:
+                log.warning("_play_action: no player attached, returning UNUSED")
                 return EVENT_UNUSED
             try:
                 from jive.ui.framework import framework as _fw
 
                 if _fw is not None and hasattr(_fw, "playSound"):
                     _fw.playSound("PLAYBACK")
-            except ImportError:
-                pass
+            except ImportError as exc:
+                log.debug(
+                    "_play_action: framework not available for playSound: %s", exc
+                )
             playlist_size = 0
             if hasattr(self._player, "getPlaylistSize"):
                 playlist_size = self._player.getPlaylistSize() or 0
+            elif hasattr(self._player, "get_playlist_size"):
+                playlist_size = self._player.get_playlist_size() or 0
             play_mode = ""
             if hasattr(self._player, "getPlayMode"):
                 play_mode = self._player.getPlayMode() or ""
+            elif hasattr(self._player, "get_play_mode"):
+                play_mode = self._player.get_play_mode() or ""
+
+            log.info(
+                "_play_action: playlist_size=%s, play_mode=%r", playlist_size, play_mode
+            )
 
             if playlist_size > 0 and play_mode != "play":
+                log.info("_play_action: calling player.play()")
                 if hasattr(self._player, "play"):
                     self._player.play()
                 return EVENT_CONSUME
+            log.info(
+                "_play_action: NOT starting play (playlist_size=%s, play_mode=%r), returning UNUSED",
+                playlist_size,
+                play_mode,
+            )
             return EVENT_UNUSED
 
         def _pause_action(*args: Any) -> int:
+            log.info("_pause_action: called, player=%s", self._player)
             if self._player is None:
+                log.warning("_pause_action: no player attached, returning UNUSED")
                 return EVENT_UNUSED
             try:
                 from jive.ui.framework import framework as _fw
 
                 if _fw is not None and hasattr(_fw, "playSound"):
                     _fw.playSound("PLAYBACK")
-            except ImportError:
-                pass
+            except ImportError as exc:
+                log.debug(
+                    "_pause_action: framework not available for playSound: %s", exc
+                )
+            log.info("_pause_action: calling togglePause()")
             if hasattr(self._player, "togglePause"):
                 self._player.togglePause()
+            elif hasattr(self._player, "toggle_pause"):
+                self._player.toggle_pause()
             return EVENT_CONSUME
 
         def _stop_action(*args: Any) -> int:
@@ -2204,8 +3090,10 @@ class SlimBrowserApplet(Applet):
 
                 if _fw is not None and hasattr(_fw, "playSound"):
                     _fw.playSound("PLAYBACK")
-            except ImportError:
-                pass
+            except ImportError as exc:
+                log.debug(
+                    "_stop_action: framework not available for playSound: %s", exc
+                )
             if hasattr(self._player, "stop"):
                 self._player.stop()
             return EVENT_CONSUME
@@ -2223,8 +3111,10 @@ class SlimBrowserApplet(Applet):
 
                 if _fw is not None and hasattr(_fw, "playSound"):
                     _fw.playSound("PLAYBACK")
-            except ImportError:
-                pass
+            except ImportError as exc:
+                log.debug(
+                    "_jump_rew_action: framework not available for playSound: %s", exc
+                )
             if hasattr(self._player, "rew"):
                 self._player.rew()
             return EVENT_CONSUME
@@ -2237,8 +3127,10 @@ class SlimBrowserApplet(Applet):
 
                 if _fw is not None and hasattr(_fw, "playSound"):
                     _fw.playSound("PLAYBACK")
-            except ImportError:
-                pass
+            except ImportError as exc:
+                log.debug(
+                    "_jump_fwd_action: framework not available for playSound: %s", exc
+                )
             if hasattr(self._player, "fwd"):
                 self._player.fwd()
             return EVENT_CONSUME
@@ -2273,8 +3165,11 @@ class SlimBrowserApplet(Applet):
                     else:
                         self._go_now("nowPlaying")
                     return EVENT_CONSUME
-            except ImportError:
-                pass
+            except ImportError as exc:
+                log.debug(
+                    "_home_or_np: framework not available for windowStack check: %s",
+                    exc,
+                )
             self._go_now("home")
             return EVENT_CONSUME
 
@@ -2284,14 +3179,40 @@ class SlimBrowserApplet(Applet):
 
                 if applet_manager is not None:
                     applet_manager.call_service("disconnectPlayer")
-            except (ImportError, AttributeError):
-                pass
+            except (ImportError, AttributeError) as exc:
+                log.error(
+                    "_quit_action: failed to call disconnectPlayer: %s",
+                    exc,
+                    exc_info=True,
+                )
             try:
                 from jive.ui.constants import EVENT_QUIT
 
                 return EVENT_CONSUME | EVENT_QUIT
             except ImportError:
                 return EVENT_CONSUME
+
+        # --- Shortcut navigation actions (ported from Lua _go*Action) ---
+
+        def _go_search_action(*args: Any) -> int:
+            self._go_menu_table_item("globalSearch")
+            return EVENT_CONSUME
+
+        def _go_music_library_action(*args: Any) -> int:
+            self._go_menu_table_item("_myMusic")
+            return EVENT_CONSUME
+
+        def _go_favorites_action(*args: Any) -> int:
+            self._go_menu_table_item("favorites")
+            return EVENT_CONSUME
+
+        def _go_playlists_action(*args: Any) -> int:
+            self._go_menu_table_item("myMusicPlaylists")
+            return EVENT_CONSUME
+
+        def _go_alarms_action(*args: Any) -> int:
+            self._go_menu_table_item("settingsAlarm")
+            return EVENT_CONSUME
 
         return {
             "go_now_playing": _go_now_playing_action,
@@ -2313,6 +3234,11 @@ class SlimBrowserApplet(Applet):
             "shuffle_toggle": _shuffle_toggle,
             "sleep": _sleep_action,
             "quit": _quit_action,
+            "go_search": _go_search_action,
+            "go_music_library": _go_music_library_action,
+            "go_favorites": _go_favorites_action,
+            "go_playlists": _go_playlists_action,
+            "go_alarms": _go_alarms_action,
         }
 
     def _install_player_key_handler(self) -> None:
@@ -2411,11 +3337,15 @@ class SlimBrowserApplet(Applet):
                 func = handlers.get(action_name)
                 if func is None:
                     return EVENT_UNUSED
-                return func(self, event)
+                return func(self, event)  # type: ignore[no-untyped-call]
 
             self._player_key_handler = _fw.addListener(event_mask, _key_handler, False)
-        except ImportError:
-            pass
+        except ImportError as exc:
+            log.error(
+                "_install_player_key_handler: framework not available: %s",
+                exc,
+                exc_info=True,
+            )
 
     def _remove_player_key_handler(self) -> None:
         """Remove the raw key handler."""
@@ -2427,8 +3357,8 @@ class SlimBrowserApplet(Applet):
 
             if _fw is not None and hasattr(_fw, "removeListener"):
                 _fw.removeListener(self._player_key_handler)
-        except ImportError:
-            pass
+        except ImportError as exc:
+            log.debug("_remove_player_key_handler: framework not available: %s", exc)
 
         self._player_key_handler = None
 
@@ -2484,7 +3414,7 @@ class SlimBrowserApplet(Applet):
             item_loop = _safe_deref(
                 data,
                 "item_loop",
-                0 if isinstance(_safe_deref(data, "item_loop"), list) else None,
+                0 if isinstance(_safe_deref(data, "item_loop"), list) else None,  # type: ignore[arg-type]
             )
             if isinstance(data.get("item_loop"), list) and len(data["item_loop"]) == 0:
                 return
@@ -2517,7 +3447,7 @@ class SlimBrowserApplet(Applet):
             window = Window("play_list", self._str("SLIMBROWSER_PLAYLIST"))
             menu = SimpleMenu("menu")
             menu.addItem({"text": self._str(token), "style": "item_no_arrow"})
-            window.addWidget(menu)
+            window.addWidget(menu)  # type: ignore[attr-defined]
 
             if hasattr(window, "setButtonAction"):
                 window.setButtonAction("rbutton", None, None)
@@ -2534,16 +3464,27 @@ class SlimBrowserApplet(Applet):
 
     def show_playlist(self) -> int:
         """Show the current playlist window."""
+        log.info(
+            "show_playlist: called, player=%s, _status_step=%s",
+            self._player,
+            "set" if self._status_step is not None else "None",
+        )
         try:
             from jive.ui.constants import EVENT_CONSUME, EVENT_UNUSED
         except ImportError:
-            EVENT_CONSUME = 0x02
-            EVENT_UNUSED = 0x00
+            EVENT_CONSUME = 0x02  # type: ignore[assignment]
+            EVENT_UNUSED = 0x00  # type: ignore[assignment]
 
         if self._status_step is not None:
             playlist_size = 0
             if self._player is not None and hasattr(self._player, "getPlaylistSize"):
                 playlist_size = self._player.getPlaylistSize() or 0
+            elif self._player is not None and hasattr(
+                self._player, "get_playlist_size"
+            ):
+                playlist_size = self._player.get_playlist_size() or 0
+
+            log.info("show_playlist: playlist_size=%s", playlist_size)
 
             if playlist_size == 0 or not playlist_size:
                 # Check if empty playlist already shown
@@ -2581,6 +3522,33 @@ class SlimBrowserApplet(Applet):
 
     # Aliases
     showPlaylist = show_playlist
+
+    def _leave_play_list_action(self) -> int:
+        """Action handler for leaving the playlist view.
+
+        Mirrors Lua ``_leavePlayListAction``.  If this window is #2
+        on the stack there is no NowPlaying window (e.g. when the
+        playlist is empty), so we go home instead.
+        """
+        try:
+            from jive.ui.constants import EVENT_CONSUME
+            from jive.ui.framework import framework as _fw
+
+            if _fw is not None and hasattr(_fw, "windowStack"):
+                stack_len = len(_fw.windowStack)
+                if stack_len == 2:
+                    self._go_now("home")
+                else:
+                    self._go_now("nowPlaying")
+            else:
+                self._go_now("nowPlaying")
+            return EVENT_CONSUME
+        except ImportError:
+            self._go_now("nowPlaying")
+            return 0x02  # EVENT_CONSUME fallback
+
+    # camelCase alias
+    _leavePlayListAction = _leave_play_list_action
 
     def show_track_one(self) -> None:
         """Show track info for track 1."""
@@ -2643,8 +3611,11 @@ class SlimBrowserApplet(Applet):
                         return EVENT_CONSUME
 
                     window.addActionListener("back", step, _back_to_np)
-                except ImportError:
-                    pass
+                except ImportError as exc:
+                    log.warning(
+                        "show_track: EVENT_CONSUME not available for back action: %s",
+                        exc,
+                    )
             step["_isNpChildWindow"] = True
 
         window = step.get("window")
@@ -2697,8 +3668,8 @@ class SlimBrowserApplet(Applet):
 
             if applet_manager is not None:
                 applet_manager.call_service("goHome")
-        except (ImportError, AttributeError):
-            pass
+        except (ImportError, AttributeError) as exc:
+            log.error("go_home: failed to call goHome service: %s", exc, exc_info=True)
 
     # Alias
     goHome = go_home
@@ -2716,8 +3687,12 @@ class SlimBrowserApplet(Applet):
                     ):
                         log.debug("found SN")
                         return server
-        except (ImportError, AttributeError, TypeError):
-            pass
+        except (ImportError, AttributeError, TypeError) as exc:
+            log.error(
+                "find_squeeze_network: failed to iterate servers: %s",
+                exc,
+                exc_info=True,
+            )
         log.error("SN not found")
         return None
 
@@ -2733,8 +3708,12 @@ class SlimBrowserApplet(Applet):
                 if applet_manager is not None:
                     current = applet_manager.call_service("getCurrentPlayer")
                     self._attach_player(current)
-            except (ImportError, AttributeError):
-                pass
+            except (ImportError, AttributeError) as exc:
+                log.error(
+                    "browser_json_request: failed to get current player: %s",
+                    exc,
+                    exc_info=True,
+                )
 
         self._perform_json_action(json_action, None, None, None, None)
 
@@ -2747,6 +3726,189 @@ class SlimBrowserApplet(Applet):
 
     # Alias
     browserCancel = browser_cancel
+
+    def browser_action_request(
+        self,
+        server: Any,
+        v: Dict[str, Any],
+        loaded_callback: Optional[Callable[..., Any]] = None,
+    ) -> Any:
+        """Make an action request via the browser.
+
+        This is the service entry point registered as ``browserActionRequest``.
+        It mirrors the Lua ``browserActionRequest`` function.
+
+        Parameters
+        ----------
+        server:
+            The server to use for the request.
+        v:
+            The item dict containing ``actions`` (with ``do`` and/or ``go``
+            sub-keys), optional ``input``, ``nextWindow``, and ``id``.
+        loaded_callback:
+            Optional callback invoked when the destination step is loaded.
+        """
+        if self._player is None:
+            try:
+                from jive.applet_manager import applet_manager
+
+                if applet_manager is not None:
+                    current = applet_manager.call_service("getCurrentPlayer")
+                    self._attach_player(current)
+            except (ImportError, AttributeError) as exc:
+                log.error(
+                    "browser_action_request: failed to get current player: %s",
+                    exc,
+                    exc_info=True,
+                )
+
+        do_action = _safe_deref(v, "actions", "do")
+        go_action = _safe_deref(v, "actions", "go")
+
+        if do_action:
+            json_action = v["actions"]["do"]
+        elif go_action:
+            json_action = v["actions"]["go"]
+        else:
+            log.debug("browserActionRequest: no action found for %s", v)
+            return False
+
+        step: Optional[Dict[str, Any]] = None
+        sink: Optional[Callable[..., Any]] = None
+        from_val: Optional[int] = None
+        qty: Optional[int] = None
+
+        # We need a new window for go actions, or do actions that involve input
+        if go_action or (do_action and v.get("input")) or v.get("id") == "playerpower":
+            next_window = v.get("nextWindow")
+            log.debug("nextWindow: %s", next_window)
+
+            if next_window:
+                if loaded_callback:
+                    loaded_callback(step)
+                if next_window == "home":
+                    sink = lambda *a, **kw: self.go_home()
+                elif next_window == "playlist":
+                    sink = lambda *a, **kw: self._go_playlist()
+                elif next_window == "nowPlaying":
+                    sink = lambda *a, **kw: self._go_now_playing()
+            else:
+                if do_action and v.get("id") == "playerpower":
+                    step, sink = self._empty_destination(step)
+                    if loaded_callback:
+                        step["loaded"] = lambda: loaded_callback(step)
+                else:
+                    step, sink = self._new_destination(
+                        None,
+                        v,
+                        self._new_window_spec(None, v),
+                        self._browse_sink,
+                        json_action,
+                    )
+
+                    if v.get("input"):
+                        window = step.get("window")
+                        if window is not None and hasattr(window, "show"):
+                            window.show()
+                        self._push_step(step)
+                    else:
+                        from_val, qty = self._decide_first_chunk(step, json_action)
+
+                        def _on_loaded(
+                            _step: Dict[str, Any] = step,
+                            _cb: Any = loaded_callback,
+                        ) -> None:
+                            last_index = None
+                            if self._player is not None:
+                                cs = _step.get("commandString")
+                                if hasattr(self._player, "getLastBrowseIndex"):
+                                    last_index = self._player.getLastBrowseIndex(cs)
+                                elif hasattr(self._player, "get_last_browse_index"):
+                                    last_index = self._player.get_last_browse_index(cs)
+
+                            if not last_index and _cb:
+                                _cb(_step)
+                                self._push_step(_step)
+                                w = _step.get("window")
+                                if w is not None and hasattr(w, "show"):
+                                    w.show()
+                            elif self._player is not None:
+                                self._player.loadedCallback = _cb
+
+                        step["loaded"] = _on_loaded
+
+        if not v.get("input"):
+            self._perform_json_action(json_action, from_val, qty, step, sink)
+
+        return step
+
+    # Aliases
+    browserActionRequest = browser_action_request
+
+    def squeeze_network_request(
+        self,
+        request: Any,
+        in_setup: bool = False,
+        success_callback: Optional[Callable[..., Any]] = None,
+    ) -> None:
+        """Make a request to SqueezeNetwork.
+
+        This is the service entry point registered as ``squeezeNetworkRequest``.
+        It mirrors the Lua ``squeezeNetworkRequest`` function.
+
+        Parameters
+        ----------
+        request:
+            The request to send to SqueezeNetwork.
+        in_setup:
+            Whether this request is part of the setup flow.
+        success_callback:
+            Optional callback invoked on successful first request.
+        """
+        squeezenetwork = self.find_squeeze_network()
+
+        if squeezenetwork is None or request is None:
+            return
+
+        self._in_setup = in_setup
+        self._server = squeezenetwork
+
+        # Create a window for SN signup
+        step, sink = self._new_destination(
+            None,
+            None,
+            {
+                "text": self._str("SN_SIGNUP"),
+                "menuStyle": "menu",
+                "labelItemStyle": "item",
+                "windowStyle": "text_list",
+                "disableBackButton": True,
+            },
+            self._browse_sink,
+        )
+
+        sink_wrapper = sink
+        if success_callback:
+
+            def _wrapped_sink(chunk: Any = None, err: Any = None) -> None:
+                sink(chunk, err)
+                log.info("Calling successCallback after initial SN request succeeded")
+                is_registered = False
+                if hasattr(squeezenetwork, "isSpRegisteredWithSn"):
+                    is_registered = squeezenetwork.isSpRegisteredWithSn()
+                elif hasattr(squeezenetwork, "is_sp_registered_with_sn"):
+                    is_registered = squeezenetwork.is_sp_registered_with_sn()
+                success_callback(is_registered)
+
+            sink_wrapper = _wrapped_sink
+
+        self._push_to_new_window(step)
+
+        if hasattr(squeezenetwork, "userRequest"):
+            squeezenetwork.userRequest(sink_wrapper, None, request)
+
+    # Aliases
+    squeezeNetworkRequest = squeeze_network_request
 
     def get_audio_volume_manager(self) -> Optional[Volume]:
         """Return the Volume manager."""
@@ -2772,7 +3934,10 @@ class SlimBrowserApplet(Applet):
         self.free()
 
     def notify_playerPlaylistChange(self, player: Any) -> None:
-        """Called when the player's playlist changes."""
+        """Called when the player's playlist changes.
+
+        Matches Lua SlimBrowserApplet.lua:3681-3724.
+        """
         log.debug("notify_playerPlaylistChange")
         if self._player != player:
             return
@@ -2788,19 +3953,55 @@ class SlimBrowserApplet(Applet):
         if hasattr(self._player, "isPowerOn"):
             is_on = self._player.isPowerOn()
 
+        step = self._status_step
+        empty_step = self._empty_step
+
+        # Display 'NOTHING' if the player is on and playlist is empty
         if is_on and playlist_size == 0:
+            from jive.ui.window import Window
+
+            # Invalidate DB so stale items are cleared
+            db_early = step.get("db")
+            if db_early is not None:
+                player_status_early = None
+                if hasattr(self._player, "getPlayerStatus"):
+                    player_status_early = self._player.getPlayerStatus()
+                if player_status_early is not None:
+                    db_early.update_status(player_status_early)
+
             custom = self.show_empty_playlist("SLIMBROWSER_NOTHING")
+            if custom is not None:
+                # Replace existing empty-step window
+                if empty_step and empty_step.get("window") is not None:
+                    if hasattr(custom, "replace"):
+                        custom.replace(empty_step["window"], Window.transitionFadeIn)
+                # Replace the playlist step window
+                if step.get("window") is not None:
+                    if hasattr(custom, "replace"):
+                        custom.replace(step["window"], Window.transitionFadeIn)
+
             try:
                 from jive.applet_manager import applet_manager
 
                 if applet_manager is not None:
                     applet_manager.call_service("hideNowPlaying")
-            except (ImportError, AttributeError):
-                pass
+            except (ImportError, AttributeError) as exc:
+                log.error(
+                    "notify_playerPlaylistChange: failed to hide now playing: %s",
+                    exc,
+                    exc_info=True,
+                )
             return
 
+        # Bug 17529: Moving from empty playlist to non-empty —
+        # push to NowPlaying and remove the emptyStep window
+        elif is_on and playlist_size and empty_step and empty_step.get("window"):
+            self._go_now_playing(None, True)
+            empty_step["window"].hide()
+            self._empty_step = None
+
         # Update the window
-        db = self._status_step.get("db")
+        db = step.get("db")
         if db is not None:
             player_status = None
             if hasattr(self._player, "getPlayerStatus"):
@@ -2808,13 +4009,15 @@ class SlimBrowserApplet(Applet):
             if player_status is not None:
                 db.update_status(player_status)
 
-            menu = self._status_step.get("menu")
+            menu = step.get("menu")
             if menu is not None and hasattr(menu, "reLayout"):
                 menu.reLayout()
 
         self._request_status()
 
-    def notify_playerTrackChange(self, player: Any, nowplaying: Any = None) -> None:
+    def notify_playerTrackChange(
+        self, player: Any, nowplaying: Any, artwork: Any
+    ) -> None:
         """Called when the current track changes."""
         log.debug("notify_playerTrackChange")
 
@@ -2842,18 +4045,312 @@ class SlimBrowserApplet(Applet):
                 if hasattr(menu, "reLayout"):
                     menu.reLayout()
 
+    # ==================================================================
+    # Connection error handling
+    # ==================================================================
+
+    def _remove_request_and_unlock(self, server: Any) -> None:
+        """Remove pending requests and unlock the current menu.
+
+        Mirrors Lua ``_removeRequestAndUnlock``.
+        """
+        if server is not None and hasattr(server, "removeAllUserRequests"):
+            server.removeAllUserRequests()
+        current_step = self._get_current_step()
+        if current_step is not None:
+            menu = current_step.get("menu")
+            if menu is not None and hasattr(menu, "unlock"):
+                menu.unlock()
+
+    # camelCase alias
+    _removeRequestAndUnlock = _remove_request_and_unlock
+
+    def _network_failure_callback(self, server: Any) -> Callable[..., None]:
+        """Return a callback for network failure handling.
+
+        Mirrors Lua ``_networkFailureCallback``.
+        """
+
+        def _callback(failure_window: Any) -> None:
+            self.server_error_window = failure_window
+            if hasattr(failure_window, "addListener"):
+                try:
+                    from jive.ui.constants import EVENT_WINDOW_POP
+
+                    def _on_pop(evt: Any = None) -> None:
+                        self.server_error_window = False
+                        self._remove_request_and_unlock(server)
+
+                    failure_window.addListener(EVENT_WINDOW_POP, _on_pop)
+                except ImportError:
+                    pass
+
+        return _callback
+
+    # camelCase alias
+    _networkFailureCallback = _network_failure_callback
+
+    def _problem_connecting_popup(self, server: Any) -> None:
+        """Show a popup while attempting to reconnect to the server.
+
+        Mirrors Lua ``_problemConnectingPopup``.  Delegates to the
+        applet manager's ``warnOnAnyNetworkFailure`` service.
+        """
+        log.debug("_problem_connecting_popup")
+
+        def _success_callback() -> None:
+            self._problem_connecting_popup_internal(server)
+
+        failure_callback = self._network_failure_callback(server)
+
+        try:
+            from jive.applet_manager import applet_manager
+
+            if applet_manager is not None:
+                applet_manager.call_service(
+                    "warnOnAnyNetworkFailure",
+                    _success_callback,
+                    failure_callback,
+                )
+        except (ImportError, AttributeError) as exc:
+            log.error(
+                "_problem_connecting_popup: warnOnAnyNetworkFailure not available: %s",
+                exc,
+                exc_info=True,
+            )
+
+    # camelCase alias
+    _problemConnectingPopup = _problem_connecting_popup
+
+    def _problem_connecting_popup_internal(self, server: Any) -> None:
+        """Internal: show a reconnection popup with a timeout.
+
+        Mirrors Lua ``_problemConnectingPopupInternal``.
+        """
+        log.info("_problem_connecting_popup_internal")
+
+        # Attempt to reconnect (may send WOL)
+        if hasattr(server, "wakeOnLan"):
+            server.wakeOnLan()
+        if hasattr(server, "connect"):
+            server.connect()
+
+        try:
+            from jive.ui.constants import EVENT_CONSUME
+            from jive.ui.icon import Icon
+            from jive.ui.label import Label
+            from jive.ui.popup import Popup
+
+            popup = Popup("waiting_popup")
+            popup.addWidget(Icon("icon_connecting"))
+            popup.addWidget(Label("text", self._str("SLIMBROWSER_CONNECTING_TO")))
+            server_name = ""
+            if hasattr(server, "getName"):
+                server_name = server.getName() or ""
+            elif hasattr(server, "get_name"):
+                server_name = server.get_name() or ""
+            popup.addWidget(Label("subtext", server_name))
+
+            if hasattr(popup, "ignoreAllInputExcept"):
+                popup.ignoreAllInputExcept(
+                    [
+                        "back",
+                        "go_home",
+                        "go_home_or_now_playing",
+                        "volume_up",
+                        "volume_down",
+                        "stop",
+                        "pause",
+                        "power",
+                    ]
+                )
+
+            def _cancel_action(*args: Any) -> int:
+                log.info("Cancel reconnect window")
+                self._remove_request_and_unlock(server)
+                self.server_error_window = None
+                if hasattr(popup, "hide"):
+                    popup.hide()
+                return EVENT_CONSUME
+
+            if hasattr(popup, "addActionListener"):
+                popup.addActionListener("back", self, _cancel_action)
+                popup.addActionListener("go_home", self, _cancel_action)
+                popup.addActionListener("go_home_or_now_playing", self, _cancel_action)
+
+            # Timer for timeout / connection failure check
+            count = 0
+
+            def _timer_callback() -> None:
+                nonlocal count
+                count += 1
+                connection_failed = False
+                if self._player is not None and hasattr(
+                    self._player, "hasConnectionFailed"
+                ):
+                    connection_failed = self._player.hasConnectionFailed()
+                if count == 20 or connection_failed:
+                    self._problem_connecting(server)
+
+            if hasattr(popup, "addTimer"):
+                popup.addTimer(1000, _timer_callback)
+
+            self.server_error_window = popup
+            popup.show()
+        except ImportError:
+            log.info("_problem_connecting_popup_internal: UI not available")
+
+    # camelCase alias
+    _problemConnectingPopupInternal = _problem_connecting_popup_internal
+
+    def _problem_connecting(self, server: Any) -> None:
+        """Show the full 'problem connecting' menu.
+
+        Mirrors Lua ``_problemConnecting``.  Delegates to the applet
+        manager's ``warnOnAnyNetworkFailure`` service.
+        """
+        log.debug("_problem_connecting")
+
+        def _success_callback() -> None:
+            self._problem_connecting_internal(server)
+
+        failure_callback = self._network_failure_callback(server)
+
+        try:
+            from jive.applet_manager import applet_manager
+
+            if applet_manager is not None:
+                applet_manager.call_service(
+                    "warnOnAnyNetworkFailure",
+                    _success_callback,
+                    failure_callback,
+                )
+        except (ImportError, AttributeError) as exc:
+            log.error(
+                "_problem_connecting: warnOnAnyNetworkFailure not available: %s",
+                exc,
+                exc_info=True,
+            )
+
+    # camelCase alias
+    _problemConnecting = _problem_connecting
+
+    def _problem_connecting_internal(self, server: Any) -> None:
+        """Internal: show the 'Problem Connecting' error window with options.
+
+        Mirrors Lua ``_problemConnectingInternal``.  Provides try-again,
+        choose-source, go-home, and choose-player options.
+        """
+        log.info("_problem_connecting_internal")
+
+        try:
+            from jive.ui.constants import EVENT_CONSUME, EVENT_WINDOW_POP
+            from jive.ui.simplemenu import SimpleMenu
+            from jive.ui.textarea import Textarea
+            from jive.ui.window import Window
+        except ImportError:
+            log.info("_problem_connecting_internal: UI not available")
+            return
+
+        window = Window(
+            "text_list",
+            self._str("SLIMBROWSER_PROBLEM_CONNECTING"),
+            "settingstitle",
+        )
+        menu = SimpleMenu("menu")
+        player = self._player
+
+        # Try again
+        def _try_again(*args: Any) -> None:
+            if hasattr(window, "hide"):
+                window.hide()
+            self._problem_connecting_popup(server)
+            try:
+                from jive.applet_manager import applet_manager
+
+                if applet_manager is not None:
+                    applet_manager.call_service("setCurrentPlayer", player)
+            except (ImportError, AttributeError) as exc:
+                log.debug("Could not call setCurrentPlayer: %s", exc)
+
+        menu.addItem(
+            {
+                "text": self._str("SLIMBROWSER_TRY_AGAIN"),
+                "callback": _try_again,
+                "sound": "WINDOWSHOW",
+            }
+        )
+
+        # Go home (when not in setup)
+        if not self.in_setup:
+
+            def _go_home_action(*args: Any) -> None:
+                self._remove_request_and_unlock(server)
+                self.go_home()
+
+            menu.addItem(
+                {
+                    "text": self._str("SLIMBROWSER_GO_HOME"),
+                    "callback": _go_home_action,
+                }
+            )
+
+        def _cancel_action(*args: Any) -> int:
+            self._remove_request_and_unlock(server)
+            if hasattr(window, "hide"):
+                window.hide()
+            return EVENT_CONSUME
+
+        if hasattr(menu, "addActionListener"):
+            menu.addActionListener("back", self, _cancel_action)
+            menu.addActionListener("go_home", self, _cancel_action)
+
+        server_name = ""
+        if self._server is not None:
+            if hasattr(self._server, "getName"):
+                server_name = self._server.getName() or ""
+            elif hasattr(self._server, "get_name"):
+                server_name = self._server.get_name() or ""
+
+        if hasattr(menu, "setHeaderWidget"):
+            menu.setHeaderWidget(
+                Textarea(
+                    "help_text",
+                    self._str("SLIMBROWSER_PROBLEM_CONNECTING_HELP"),
+                )
+            )
+
+        window.addWidget(menu)
+
+        self.server_error_window = window
+        if hasattr(window, "addListener"):
+
+            def _on_pop(evt: Any = None) -> None:
+                self.server_error_window = False
+
+            window.addListener(EVENT_WINDOW_POP, _on_pop)
+
+        window.show()
+
+    # camelCase alias
+    _problemConnectingInternal = _problem_connecting_internal
+
+    # ==================================================================
+    # Player notifications (continued)
+    # ==================================================================
+
     def notify_serverConnected(self, server: Any) -> None:
         """Called when the server connects."""
         if self._server != server:
             return
 
         try:
-            from jive.iconbar import iconbar
+            from jive.iconbar import iconbar  # type: ignore[attr-defined]
 
             if iconbar is not None:
                 iconbar.setServerError("OK")
-        except (ImportError, AttributeError):
-            pass
+        except (ImportError, AttributeError) as exc:
+            log.debug("notify_serverConnected: iconbar not available: %s", exc)
 
         # Hide connection error window
         if self.server_error_window:
@@ -2867,20 +4364,18 @@ class SlimBrowserApplet(Applet):
                     window.hide()
             self.server_error_window = None
 
-    def notify_serverDisconnected(
-        self, server: Any, num_user_requests: int = 0
-    ) -> None:
+    def notify_serverDisconnected(self, server: Any, num_user_requests: int) -> None:
         """Called when the server disconnects."""
         if self._server != server:
             return
 
         try:
-            from jive.iconbar import iconbar
+            from jive.iconbar import iconbar  # type: ignore[attr-defined]
 
             if iconbar is not None:
                 iconbar.setServerError("ERROR")
-        except (ImportError, AttributeError):
-            pass
+        except (ImportError, AttributeError) as exc:
+            log.debug("notify_serverDisconnected: iconbar not available: %s", exc)
 
     def notify_networkOrServerNotOK(self, iface: Any = None) -> None:
         """Called when there's a network or server error."""
@@ -2905,7 +4400,7 @@ class SlimBrowserApplet(Applet):
             self._diag_window = False
 
     def notify_playerDigitalVolumeControl(
-        self, player: Any, digital_volume_control: int = 1
+        self, player: Any, digital_volume_control: int
     ) -> None:
         """Called when digital volume control setting changes."""
         if player != self._player:
@@ -2934,7 +4429,7 @@ class SlimBrowserApplet(Applet):
             if hasattr(player, "volume"):
                 player.volume(self.cached_volume, True)
 
-    def notify_playerPower(self, player: Any, power: bool = True) -> None:
+    def notify_playerPower(self, player: Any, power: bool) -> None:
         """Called when player power changes."""
         log.debug("SlimBrowser.notify_playerPower")
         if self._player != player:
@@ -2954,8 +4449,21 @@ class SlimBrowserApplet(Applet):
                                 empty["window"],
                                 getattr(Window, "transitionFadeIn", None),
                             )
-                        except ImportError:
-                            pass
+                        except ImportError as exc:
+                            log.debug(
+                                "notify_playerPower: Window not available for transition: %s",
+                                exc,
+                            )
+
+    def notify_playerModeChange(self, player: Any, mode: Any) -> None:
+        """Called when the player mode changes (play/pause/stop).
+
+        BUG 11819: Current Playlist window should always show Current
+        Playlist, so this is intentionally a no-op.  The Lua original
+        had an empty body as well.
+        """
+        # Intentionally empty — see BUG 11819 in the Lua original.
+        pass
 
     # ==================================================================
     # Player attachment
@@ -2975,12 +4483,12 @@ class SlimBrowserApplet(Applet):
 
         # Clear errors
         try:
-            from jive.iconbar import iconbar
+            from jive.iconbar import iconbar  # type: ignore[attr-defined]
 
             if iconbar is not None:
                 iconbar.setServerError("OK")
-        except (ImportError, AttributeError):
-            pass
+        except (ImportError, AttributeError) as exc:
+            log.debug("_attach_player: iconbar not available: %s", exc)
 
         # No cached volume for new player
         self.cached_volume = None
@@ -3132,13 +4640,13 @@ class _WindowStub:
         self._title = title
 
     def getTitle(self) -> str:
-        return self._title
+        return self._title  # type: ignore[no-any-return]
 
     def setStyle(self, style: str) -> None:
         self._style = style
 
     def getStyle(self) -> str:
-        return self._style
+        return self._style  # type: ignore[no-any-return]
 
     def setWindowId(self, wid: Any) -> None:
         self._window_id = wid

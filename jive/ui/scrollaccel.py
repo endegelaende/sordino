@@ -72,6 +72,8 @@ class ScrollAccel(ScrollWheel):
         function that always returns ``True``.
     """
 
+    __slots__ = ("_list_index", "_scroll_dir", "_scroll_last_t", "_scroll_accel")
+
     def __init__(
         self,
         item_available: Optional[Callable[[int, int], bool]] = None,

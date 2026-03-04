@@ -54,6 +54,7 @@ from jive.ui.constants import (
     EVENT_IR_PRESS,
     EVENT_IR_REPEAT,
     EVENT_KEY_ALL,
+    EVENT_KEY_DOWN,
     EVENT_KEY_PRESS,
     EVENT_MOUSE_ALL,
     EVENT_MOUSE_DOWN,
@@ -89,7 +90,7 @@ if TYPE_CHECKING:
     from jive.ui.event import Event
     from jive.ui.font import Font
     from jive.ui.surface import Surface
-    from jive.ui.tile import JiveTile
+    from jive.ui.tile import JiveTile  # type: ignore[attr-defined]
 
 __all__ = ["Menu"]
 
@@ -136,10 +137,50 @@ class Menu(Widget):
         when an event targets a menu item.
     """
 
+    __slots__ = (
+        "list",
+        "widgets",
+        "list_size",
+        "num_widgets",
+        "item_height",
+        "items_per_line",
+        "selected",
+        "top_item",
+        "pixel_offset_y",
+        "current_shift_direction",
+        "drag_y_since_shift",
+        "hide_scrollbar",
+        "disable_vertical_bump",
+        "_closeable",
+        "_locked",
+        "_lock_cancel",
+        "_lock_time",
+        "_lock_style",
+        "header_widget",
+        "header_widget_height",
+        "virtual_item_count",
+        "mouse_state",
+        "mouse_down_bounds_x",
+        "mouse_down_bounds_y",
+        "use_pressed_style",
+        "_last_selected",
+        "_last_selected_index",
+        "_font",
+        "_fg",
+        "_max_height",
+        "_has_scrollbar",
+        "scrollbar",
+        "item_renderer",
+        "item_listener",
+        "item_available",
+    )
+
     def __init__(
         self,
         style: str,
+        item_renderer: Optional[Callable[..., None]] = None,
         item_listener: Optional[Callable[..., int]] = None,
+        item_available: Optional[Callable[..., bool]] = None,
     ) -> None:
         if not isinstance(style, str):
             raise TypeError(f"style must be a string, got {type(style).__name__}")
@@ -168,7 +209,11 @@ class Menu(Widget):
         self._closeable: bool = True
 
         # Lock state — when locked, input is suppressed
-        self._locked: bool = False
+        # Lua stores cancel callback in self.locked (or true if no callback)
+        # and lock time in self.lockedT for timeout escape.
+        self._locked: Any = False  # False or cancel callback or True
+        self._lock_cancel: Optional[Callable[..., Any]] = None
+        self._lock_time: Optional[int] = None  # ticks when locked
         self._lock_style: Optional[str] = None
 
         # Header widget
@@ -184,6 +229,10 @@ class Menu(Widget):
         self.mouse_down_bounds_y: int = 0
         self.use_pressed_style: bool = False
 
+        # Selection tracking (for style modifier management)
+        self._last_selected: Optional[Widget] = None
+        self._last_selected_index: Optional[int] = None
+
         # Peer state (from C struct MenuWidget)
         self._font: Optional[Font] = None
         self._fg: int = 0x000000FF
@@ -196,24 +245,17 @@ class Menu(Widget):
         self.scrollbar: Scrollbar = Scrollbar("scrollbar")
         self.scrollbar.parent = self
 
-        # Item listener callback
+        # Lua-compatible callbacks (itemRenderer, itemListener, itemAvailable)
+        self.item_renderer: Optional[Callable[..., None]] = item_renderer
         self.item_listener: Optional[Callable[..., int]] = item_listener
+        self.item_available: Optional[Callable[..., bool]] = item_available
 
-        # Action listeners
-        self.add_action_listener("go", self, Menu._go_action)
-        self.add_action_listener("back", self, Menu._back_action)
-        self.add_action_listener("page_up", self, Menu._page_up_action)
-        self.add_action_listener("page_down", self, Menu._page_down_action)
-
-        # Event listener for scroll, key, mouse, IR
+        # Single EVENT_ALL listener — matches the Lua original which
+        # handles ALL events (KEY_PRESS, ACTION, SCROLL, MOUSE, IR, etc.)
+        # in one _eventHandler function.  No separate addActionListener
+        # calls are used in the Lua Menu.
         self.add_listener(
-            EVENT_SCROLL
-            | EVENT_KEY_PRESS
-            | EVENT_MOUSE_ALL
-            | EVENT_IR_DOWN
-            | EVENT_IR_REPEAT
-            | EVENT_FOCUS_GAINED
-            | EVENT_FOCUS_LOST,
+            int(EVENT_ALL),
             lambda event: self._event_handler(event),
         )
 
@@ -237,19 +279,54 @@ class Menu(Widget):
 
     getItem = get_item
 
-    def set_items(self, items: List[Any]) -> None:
+    def set_items(
+        self,
+        items: Any,
+        list_size: Optional[int] = None,
+        min_val: Optional[int] = None,
+        max_val: Optional[int] = None,
+    ) -> None:
         """
-        Replace the entire item list.
+        Replace the item list.
 
-        Parameters
-        ----------
-        items : list
-            New list of items.
+        Supports two calling conventions:
+
+        1. ``set_items(python_list)`` — sets both ``list`` and ``list_size``
+           from the list length.
+        2. ``set_items(opaque_data, list_size, min, max)`` — Lua-compatible
+           form used by SlimBrowser.  ``opaque_data`` is stored as-is
+           (e.g. a step dict) and the renderer knows how to interpret it.
         """
-        self.list = list(items)
-        self.list_size = len(self.list)
-        self._update_widgets()
-        self.re_layout()
+        if list_size is not None:
+            # Lua-compatible: opaque data + explicit size
+            self.list = items
+            self.list_size = list_size
+        elif isinstance(items, list):
+            self.list = list(items)
+            self.list_size = len(self.list)
+        else:
+            self.list = items
+            self.list_size = 0
+
+        # Ensure selection is set (Lua defaults selected to 1)
+        if self.selected is None and self.list_size > 0:
+            self.selected = 1
+        elif self.selected is not None and self.list_size > 0:
+            if self.selected > self.list_size:
+                self.selected = self.list_size
+
+        # Default min/max to cover the full range
+        if min_val is None:
+            min_val = 1
+        if max_val is None:
+            max_val = self.list_size
+
+        # Only trigger layout if changed items overlap the visible window
+        # (matches Lua setItems which checks topItem/botItem)
+        top_item = self.top_item
+        bot_item = top_item + max(self.num_widgets, 1) - 1
+        if not (max_val < top_item or min_val > bot_item):
+            self.re_layout()
 
     setItems = set_items
 
@@ -285,8 +362,8 @@ class Menu(Widget):
         """Remove *item* from the list by identity."""
         try:
             self.list.remove(item)
-        except ValueError:
-            pass
+        except ValueError as exc:
+            log.debug("remove failed: %s", exc)
         self.list_size = len(self.list)
         self._update_widgets()
         self.re_layout()
@@ -316,13 +393,16 @@ class Menu(Widget):
     removeAllItems = remove_all_items
 
     def replace_item(self, old_item: Any, new_item: Any) -> None:
-        """Replace *old_item* with *new_item* in the list."""
+        """Replace *old_item* with *new_item* in the list.
+
+        Triggers a full re-layout so that widget bounds are recalculated,
+        matching the Lua original's use of ``reLayout``.
+        """
         for i, item in enumerate(self.list):
             if item is old_item:
                 self.list[i] = new_item
                 break
-        self._update_widgets()
-        self.re_draw()
+        self.re_layout()
 
     replaceItem = replace_item
 
@@ -363,29 +443,40 @@ class Menu(Widget):
 
     isCloseable = is_closeable
 
-    def lock(self, style: Optional[str] = None) -> None:
-        """
-        Lock the menu, suppressing all input until :meth:`unlock` is
-        called.
+    def lock(self, cancel: Any = None) -> None:
+        """Lock the menu, suppressing all input until :meth:`unlock`.
 
-        This is used to prevent user interaction while a long-running
-        operation (e.g. applet loading) is in progress.
+        Matches Lua ``Menu:lock(cancel)``.  The *cancel* callback is
+        called when the user presses back/home while locked, or after
+        the GO_AS_CANCEL_TIME timeout (1500 ms) on a mouse click.
 
         Parameters
         ----------
-        style : str, optional
-            An optional style override applied while locked (e.g. to
-            show a spinner).
+        cancel : callable or any, optional
+            A callback ``cancel(menu)`` invoked on escape.  If not
+            provided, ``True`` is stored so the lock is still truthy.
         """
-        self._locked = True
-        self._lock_style = style
+        self._locked = cancel if cancel is not None else True
+        self._lock_cancel = cancel if callable(cancel) else None
+        try:
+            from jive.ui.framework import framework as fw
+            self._lock_time = fw.get_ticks() if fw is not None else None
+        except (ImportError, AttributeError):
+            self._lock_time = None
+        self.re_layout()
 
     def unlock(self) -> None:
+        """Unlock the menu, re-enabling input.
+
+        Matches Lua ``Menu:unlock()``.
         """
-        Unlock the menu, re-enabling input.
-        """
+        if not self._locked:
+            return
         self._locked = False
+        self._lock_cancel = None
+        self._lock_time = None
         self._lock_style = None
+        self.re_layout()
 
     def is_locked(self) -> bool:
         """Return ``True`` if the menu is currently locked."""
@@ -410,6 +501,9 @@ class Menu(Widget):
         """
         Set the selected item by 1-based *index*.
 
+        Matches the Lua original (Menu.lua ``setSelectedIndex``) which
+        calls ``self:reLayout()`` unless *no_scroll* is set.
+
         Parameters
         ----------
         index : int
@@ -417,7 +511,7 @@ class Menu(Widget):
         coerce : bool
             If True, clamp to valid range.
         no_scroll : bool
-            If True, do not scroll the list.
+            If True, do not scroll the list and do not re-layout.
         """
         if self.list_size == 0:
             self.selected = None
@@ -434,9 +528,12 @@ class Menu(Widget):
 
         if not no_scroll:
             self._scroll_list()
-
-        self._update_widgets()
-        self.re_draw()
+            self._fire_item_focus(old, self.selected)
+            # Lua original: self:reLayout()
+            self.re_layout()
+        else:
+            self._fire_item_focus(old, self.selected)
+            self.re_draw()
 
     setSelectedIndex = set_selected_index
 
@@ -445,9 +542,9 @@ class Menu(Widget):
         if self.selected is not None and self.widgets:
             widget_idx = self.selected - self.top_item
             if 0 <= widget_idx < len(self.widgets):
-                return self.widgets[widget_idx]
+                return self.widgets[widget_idx]  # type: ignore[no-any-return]
         if self.widgets:
-            return self.widgets[0]
+            return self.widgets[0]  # type: ignore[no-any-return]
         return None
 
     # ------------------------------------------------------------------
@@ -464,6 +561,11 @@ class Menu(Widget):
         Scroll the menu by *scroll* items.
 
         Negative values scroll up, positive values scroll down.
+
+        Matches the Lua original (Menu.lua ``scrollBy``) which calls
+        ``_scrollList(self)`` followed by ``self:reLayout()``.  The
+        ``reLayout`` triggers ``_layout`` → ``_updateWidgets`` so that
+        widget positions are recalculated for the new scroll offset.
         """
         if self.selected is None:
             return
@@ -472,14 +574,27 @@ class Menu(Widget):
         new_selected = _coerce(new_selected, self.list_size)
 
         if new_selected != self.selected:
+            old = self.selected
             self.selected = new_selected
             self._scroll_list()
-            self._update_widgets()
-            if update_scrollbar:
-                self._update_scrollbar()
-            self.re_draw()
+            self._fire_item_focus(old, self.selected)
+            # Lua original calls self:reLayout() here — this triggers
+            # _layout() which recalculates num_widgets, calls
+            # _update_widgets(), repositions child widget bounds, and
+            # updates the scrollbar.  Using re_draw() alone would leave
+            # widget bounds stale after the scroll offset changes.
+            self.re_layout()
 
     scrollBy = scroll_by
+
+    def set_header_widget(self, widget: Any) -> None:
+        """Set an optional header widget displayed above the menu items."""
+        self.header_widget = widget
+        if widget is not None:
+            widget.parent = self
+        self.re_layout()
+
+    setHeaderWidget = set_header_widget
 
     def _scroll_list(self) -> None:
         """Adjust top_item so that the selected item is visible."""
@@ -621,130 +736,425 @@ class Menu(Widget):
         """
         Synchronize the visible widget list with the underlying data.
 
-        Subclasses (SimpleMenu) override this to create/update widgets
-        from data items.
+        When an ``item_renderer`` callback is set (as in Lua's Menu),
+        it is called with ``(menu, list, widgets, indexList, indexSize)``
+        to create/update the visible widgets.
+
+        Subclasses (SimpleMenu) override this entirely.
         """
-        pass  # Base Menu relies on widgets being set directly
+        if self.item_renderer is None:
+            return
+
+        ipl = self.items_per_line or 1
+        index_size = self.num_widgets + ipl  # one extra for smooth scrolling
+        min_idx = self.top_item
+        max_idx = min(self.top_item + index_size - 1, self.list_size)
+        actual_size = max(max_idx - min_idx + 1, 0)
+
+        index_list = list(range(min_idx, max_idx + 1))
+
+        self.item_renderer(self, self.list, self.widgets, index_list, actual_size)
+
+        # Set parent linkage for rendered widgets
+        for i in range(actual_size):
+            if i < len(self.widgets) and self.widgets[i] is not None:
+                self.widgets[i].parent = self
+
+        # Unreference menu widgets out of stage — Lua Menu.lua L1797-1799
+        del self.widgets[actual_size:]
+
+        self._apply_selection_style()
+
+        # Update scrollbar position — matches Lua Menu.lua L1847
+        self._update_scrollbar()
+
+    def _apply_selection_style(self) -> None:
+        """Apply style modifiers to the selected item widget.
+
+        Mirrors Lua ``_updateWidgets`` lines 1801-1826:
+        - Clear modifier on previously selected widget
+        - Set ``"selected"`` / ``"pressed"`` / ``"locked"`` on the new one
+        """
+        next_selected = self._selected_item_widget()
+
+        # Clear old selection
+        if self._last_selected is not None and self._last_selected is not next_selected:
+            if hasattr(self._last_selected, "set_style_modifier"):
+                self._last_selected.set_style_modifier(None)
+
+        # Apply modifier to new selection
+        if next_selected is not None:
+            if self._locked:
+                modifier = "locked"
+            elif self.use_pressed_style:
+                modifier = "pressed"
+            else:
+                modifier = "selected"
+            if hasattr(next_selected, "set_style_modifier"):
+                next_selected.set_style_modifier(modifier)
+
+        self._last_selected = next_selected
 
     # ------------------------------------------------------------------
-    # Action handlers
+    # Focus event dispatch on selection change
     # ------------------------------------------------------------------
 
-    def _go_action(self) -> int:
-        """Handle the 'go' action — forward to selected item."""
+    def _fire_item_focus(
+        self,
+        old_index: Optional[int],
+        new_index: Optional[int],
+    ) -> None:
+        """Dispatch ``EVENT_FOCUS_LOST`` / ``EVENT_FOCUS_GAINED`` via the
+        item listener when the selected index changes.
+
+        This mirrors the Lua Menu ``_update`` which calls
+        ``_itemListener(self, nextSelected, Event(EVENT_FOCUS_GAINED))``
+        whenever the selected index changes.
+        """
+        if old_index == new_index:
+            return
+        if self.item_listener is None:
+            return
+
+        from jive.ui.event import Event
+
+        # Fire FOCUS_LOST on the previously selected item
+        if old_index is not None and 1 <= old_index <= self.list_size:
+            old_widget = None
+            widget_idx = old_index - self.top_item
+            if 0 <= widget_idx < len(self.widgets):
+                old_widget = self.widgets[widget_idx]
+            try:
+                self.item_listener(
+                    self,
+                    self.list,
+                    old_widget,
+                    old_index,
+                    Event(int(EVENT_FOCUS_LOST)),
+                )
+            except Exception as exc:
+                log.warning("item_listener FOCUS_LOST: %s", exc)
+
+        # Fire FOCUS_GAINED on the newly selected item
+        if new_index is not None and 1 <= new_index <= self.list_size:
+            new_widget = None
+            widget_idx = new_index - self.top_item
+            if 0 <= widget_idx < len(self.widgets):
+                new_widget = self.widgets[widget_idx]
+            try:
+                self.item_listener(
+                    self,
+                    self.list,
+                    new_widget,
+                    new_index,
+                    Event(int(EVENT_FOCUS_GAINED)),
+                )
+            except Exception as exc:
+                log.warning("item_listener FOCUS_GAINED: %s", exc)
+
+    # ------------------------------------------------------------------
+    # Item listener helper (matches Lua _itemListener)
+    # ------------------------------------------------------------------
+
+    def _item_listener(self, item: Any, event: Any) -> int:
+        """Forward event to the item listener callback, then to the item widget.
+
+        Matches Lua ``_itemListener(self, item, event)`` which first calls
+        ``self.itemListener(self, self.list, item, self.selected, event)``
+        and, if that returns EVENT_UNUSED, falls through to ``item:_event(event)``.
+        """
+        r = int(EVENT_UNUSED)
+        if item is None:
+            return r
+
+        if self.item_listener is not None:
+            try:
+                r = self.item_listener(self, self.list, item, self.selected or 1, event)
+            except Exception as exc:
+                log.error("item_listener error: %s", exc, exc_info=True)
+                r = int(EVENT_UNUSED)
+
+        if r == int(EVENT_UNUSED):
+            try:
+                r = item._event(event)
+            except Exception:
+                r = int(EVENT_UNUSED)
+
+        return r
+
+    # ------------------------------------------------------------------
+    # Action handlers (called from _event_handler)
+    # ------------------------------------------------------------------
+
+    def _go_action(self, event: Any = None) -> int:
+        """Handle the 'go' action — dispatch EVENT_ACTION to selected item.
+
+        Matches Lua: ``local r = self:dispatchNewEvent(EVENT_ACTION)``
+        which sends EVENT_ACTION through _itemListener → item._event.
+        """
+        from jive.ui.event import Event as Evt
+
         item = self._selected_item_widget()
         if item is not None:
-            from jive.ui.event import Event
-
-            evt = Event(EVENT_ACTION)
-            r = item._event(evt)
-            if r != EVENT_UNUSED:
+            action_evt = Evt(int(EVENT_ACTION))
+            r = self._item_listener(item, action_evt)
+            if r != int(EVENT_UNUSED):
                 return r
-        return EVENT_UNUSED
+        # Lua plays BUMP sound and calls bumpRight() here; skipped for now
+        return int(EVENT_UNUSED)
 
-    def _back_action(self) -> int:
-        """Handle the 'back' action — hide the window."""
-        window = self.get_window()
-        if window is not None:
-            window.hide()
-            return EVENT_CONSUME
-        return EVENT_UNUSED
+    def _back_action(self, event: Any = None) -> int:
+        """Handle the 'back' action — hide the window if closeable.
 
-    def _page_up_action(self) -> int:
-        """Scroll up by one page."""
-        if self.num_widgets > 0:
-            self.scroll_by(-self.num_widgets)
-        return EVENT_CONSUME
+        Matches Lua lines 561-570: checks ``self.closeable`` flag.
+        """
+        if self._closeable:
+            window = self.get_window()
+            if window is not None:
+                window.hide()
+                return int(EVENT_CONSUME)
+        # Not closeable — would play BUMP in Lua
+        return int(EVENT_CONSUME)
 
-    def _page_down_action(self) -> int:
-        """Scroll down by one page."""
-        if self.num_widgets > 0:
-            self.scroll_by(self.num_widgets)
-        return EVENT_CONSUME
+    def _page_up_action(self, event: Any = None) -> int:
+        """Scroll up by one page.
+
+        Matches Lua: top item becomes bottom item.
+        """
+        if self.selected is not None and self.selected > 1:
+            self.set_selected_index(self.top_item, coerce=True)
+            self.scroll_by(-(self.num_widgets - 2))
+        return int(EVENT_CONSUME)
+
+    def _page_down_action(self, event: Any = None) -> int:
+        """Scroll down by one page.
+
+        Matches Lua: bottom item becomes top item.
+        """
+        if self.selected is None or self.selected < self.list_size:
+            self.set_selected_index(self.top_item + self.num_widgets - 1, coerce=True)
+            self.scroll_by(self.num_widgets - 2)
+        return int(EVENT_CONSUME)
 
     # ------------------------------------------------------------------
-    # Event handling
+    # Event handling — single handler for EVENT_ALL (matches Lua)
     # ------------------------------------------------------------------
 
     def _event_handler(self, event: Event) -> int:
+        """Handle all events, matching the Lua ``_eventHandler``.
+
+        The Lua Menu registers a single ``EVENT_ALL`` listener that handles
+        SCROLL, IR, ACTION, KEY_PRESS, MOUSE, FOCUS, SHOW, etc. inline.
+        """
         etype = event.get_type()
 
-        if etype == EVENT_SCROLL:
-            self.scroll_by(event.get_scroll())
-            return EVENT_CONSUME
+        # -- SCROLL --
+        if etype == int(EVENT_SCROLL):
+            if self._locked is None or not self._locked:
+                self.scroll_by(event.get_scroll())
+            return int(EVENT_CONSUME)
 
-        if etype == EVENT_KEY_PRESS:
+        # -- IR DOWN / REPEAT --
+        if etype in (int(EVENT_IR_DOWN), int(EVENT_IR_REPEAT)):
+            if hasattr(event, "is_ir_code"):
+                if event.is_ir_code("arrow_up") or event.is_ir_code("arrow_down"):
+                    if not self._locked:
+                        scroll_amount = -1 if event.is_ir_code("arrow_up") else 1
+                        self.scroll_by(scroll_amount)
+                    return int(EVENT_CONSUME)
+            return int(EVENT_UNUSED)
+
+        # -- ACTION (matches Lua lines 475-589) --
+        if etype == int(ACTION):
+            action = event.get_action()
+
+            # Locked state — only back/go_home can unlock (Lua L478-487)
+            if self._locked:
+                log.debug("Menu LOCKED, action=%s — consuming", action)
+                if action in ("back", "go_home", "go_home_or_now_playing"):
+                    # Call cancel callback before unlocking (Lua L481-482)
+                    if self._lock_cancel is not None:
+                        try:
+                            self._lock_cancel()
+                        except TypeError:
+                            try:
+                                self._lock_cancel(self)
+                            except Exception:
+                                pass
+                    self.unlock()
+                    return int(EVENT_CONSUME)
+                # All other actions consumed while locked
+                return int(EVENT_CONSUME)
+
+            # First forward action to selected item via _itemListener
+            # (Lua line 497: local r = _itemListener(self, _selectedItem(self), event))
+            item = self._selected_item_widget()
+            r = self._item_listener(item, event)
+            if r != int(EVENT_UNUSED):
+                return r
+
+            # Default action handling
+            if action == "page_up":
+                return self._page_up_action(event)
+
+            elif action == "page_down":
+                return self._page_down_action(event)
+
+            elif action == "go":
+                return self._go_action(event)
+
+            elif action == "back":
+                return self._back_action(event)
+
+            # Unhandled action — pass through
+            return int(EVENT_UNUSED)
+
+        # -- KEY_DOWN (immediate response for arrow keys) --
+        # React on key-down instead of key-up to eliminate the delay
+        # caused by waiting for the key release before scrolling.
+        if etype == int(EVENT_KEY_DOWN):
             keycode = event.get_keycode()
 
-            if keycode == KEY_UP:
-                self.scroll_by(-1)
-                return EVENT_CONSUME
-            elif keycode == KEY_DOWN:
-                self.scroll_by(1)
-                return EVENT_CONSUME
-            elif keycode == KEY_PAGE_UP:
-                return self._page_up_action()
-            elif keycode == KEY_PAGE_DOWN:
-                return self._page_down_action()
-            elif keycode == KEY_GO:
-                return self._go_action()
+            # UP / DOWN — scroll immediately on key-down
+            scroll = None
+            if keycode == int(KEY_UP):
+                scroll = -1 * (self.items_per_line or 1)
+            elif keycode == int(KEY_DOWN):
+                scroll = 1 * (self.items_per_line or 1)
 
-            return EVENT_UNUSED
+            if scroll is not None and not self._locked:
+                self.scroll_by(scroll)
+                return int(EVENT_CONSUME)
 
-        if etype == EVENT_FOCUS_GAINED:
+            # Don't consume other KEY_DOWN events — let them
+            # fall through to KEY_PRESS handling on key-up.
+            return int(EVENT_UNUSED)
+
+        # -- KEY_PRESS (matches Lua lines 592-632) --
+        if etype == int(EVENT_KEY_PRESS):
+            keycode = event.get_keycode()
+
+            # KEY_LEFT / KEY_RIGHT — push back/go actions for single-column menus
+            # (Lua lines 597-605)
+            if keycode in (int(KEY_LEFT), int(KEY_RIGHT)):
+                ipl = self.items_per_line or 1
+                if ipl == 1 or (
+                    keycode == int(KEY_LEFT)
+                    and (self.selected is None or self.selected == 1)
+                ):
+                    from jive.ui.framework import framework as fw
+
+                    if keycode == int(KEY_LEFT):
+                        fw.push_action("back")
+                    else:
+                        fw.push_action("go")
+                    return int(EVENT_CONSUME)
+                else:
+                    # Grid mode: scroll left/right
+                    scroll = -1 if keycode == int(KEY_LEFT) else 1
+                    if not self._locked:
+                        self.scroll_by(scroll)
+                    return int(EVENT_CONSUME)
+
+            # KEY_UP / KEY_DOWN — already handled on KEY_DOWN above,
+            # consume here to prevent double-scroll.
+            if keycode in (int(KEY_UP), int(KEY_DOWN)):
+                return int(EVENT_CONSUME)
+
+            # Forward remaining key presses to selected item (Lua lines 625-631)
+            if not self._locked:
+                item = self._selected_item_widget()
+                r = self._item_listener(item, event)
+                if r != int(EVENT_UNUSED):
+                    return r
+
+            return int(EVENT_UNUSED)
+
+        # -- FOCUS --
+        if etype == int(EVENT_FOCUS_GAINED):
             if self.selected is None and self.list_size > 0:
                 self.selected = 1
             self.re_draw()
-            return EVENT_CONSUME
+            return int(EVENT_CONSUME)
 
-        if etype == EVENT_FOCUS_LOST:
+        if etype == int(EVENT_FOCUS_LOST):
             self.re_draw()
-            return EVENT_CONSUME
+            return int(EVENT_CONSUME)
 
-        if etype in (EVENT_MOUSE_PRESS, EVENT_MOUSE_HOLD, EVENT_MOUSE_MOVE):
-            return EVENT_CONSUME
+        # -- MOUSE events --
+        if etype == int(EVENT_MOUSE_HOLD):
+            # Lua: long-press in the body area pushes "add" which opens
+            # the context menu (mapped to "more" in _ACTION_TO_ACTION_NAME).
+            if self.mouse_state == MOUSE_DOWN:
+                scrollbar_inside = False
+                if self.scrollbar is not None and hasattr(self.scrollbar, "mouse_inside"):
+                    scrollbar_inside = self.scrollbar.mouse_inside(event)
+                if not scrollbar_inside:
+                    from jive.ui.framework import framework as fw
+                    if fw is not None:
+                        fw.push_action("add")
+            return int(EVENT_CONSUME)
 
-        if etype == EVENT_MOUSE_DOWN:
+        if etype == int(EVENT_MOUSE_PRESS):
+            return int(EVENT_CONSUME)
+
+        if etype == int(EVENT_MOUSE_MOVE):
+            return int(EVENT_CONSUME)
+
+        if etype == int(EVENT_MOUSE_DOWN):
             self.mouse_state = MOUSE_DOWN
             try:
                 x, y = event.get_mouse()[:2]
                 bx, by, bw, bh = self.get_bounds()
                 self.mouse_down_bounds_x = x - bx
                 self.mouse_down_bounds_y = y - by
-            except Exception:
-                pass
-            return EVENT_CONSUME
+            except Exception as exc:
+                log.warning("mouse_down bounds: %s", exc)
+            return int(EVENT_CONSUME)
 
-        if etype == EVENT_MOUSE_UP:
+        if etype == int(EVENT_MOUSE_UP):
+            # Lua L918-923: locked timeout escape on mouse click
+            if self._locked and self._lock_time is not None:
+                try:
+                    from jive.ui.framework import framework as fw
+                    now = fw.get_ticks() if fw is not None else 0
+                    if now > self._lock_time + 1500:  # GO_AS_CANCEL_TIME
+                        if self._lock_cancel is not None:
+                            try:
+                                self._lock_cancel()
+                            except TypeError:
+                                try:
+                                    self._lock_cancel(self)
+                                except Exception:
+                                    pass
+                        self.unlock()
+                        return int(EVENT_CONSUME)
+                except (ImportError, AttributeError):
+                    pass
+
             if self.mouse_state == MOUSE_DOWN:
                 # Simple tap — select and activate
                 self._select_item_under_pointer()
-                r = self._go_action()
+                try:
+                    r = self._go_action()
+                except Exception as exc:
+                    log.warn("_go_action error: %s", exc)
+                    r = int(EVENT_UNUSED)
                 self.mouse_state = MOUSE_COMPLETE
                 self.use_pressed_style = False
                 self.re_draw()
-                return EVENT_CONSUME if r == EVENT_UNUSED else r
+                return int(EVENT_CONSUME)
 
             self.mouse_state = MOUSE_COMPLETE
             self.use_pressed_style = False
             self.re_draw()
-            return EVENT_CONSUME
+            return int(EVENT_CONSUME)
 
-        if etype == EVENT_MOUSE_DRAG:
+        if etype == int(EVENT_MOUSE_DRAG):
             self.mouse_state = MOUSE_DRAG
-            return EVENT_CONSUME
+            return int(EVENT_CONSUME)
 
-        if etype & EVENT_IR_ALL:
-            if hasattr(event, "is_ir_code"):
-                if event.is_ir_code("arrow_up"):
-                    self.scroll_by(-1)
-                    return EVENT_CONSUME
-                elif event.is_ir_code("arrow_down"):
-                    self.scroll_by(1)
-                    return EVENT_CONSUME
-            return EVENT_UNUSED
-
-        return EVENT_UNUSED
+        return int(EVENT_UNUSED)
 
     def _select_item_under_pointer(self) -> bool:
         """Select the menu item under the mouse pointer (from last down)."""
@@ -778,6 +1188,24 @@ class Menu(Widget):
     # ------------------------------------------------------------------
     # Skin (jiveL_menu_skin)
     # ------------------------------------------------------------------
+
+    def re_skin(self) -> None:
+        """Reset all menu-specific cached skin state, then call super.
+
+        The C original ``jiveL_menu_skin`` does **not** touch the
+        scrollbar — it is re-skinned independently via
+        ``style_changed`` → ``_mark_dirty_recursive``.  Calling
+        ``scrollbar.re_skin()`` here would eagerly reset the
+        scrollbar's cached tiles / preferred_bounds, which is both
+        unnecessary and can cause transient blank-scrollbar states
+        during skin switches.
+        """
+        self.item_height = 20
+        self._max_height = WH_NIL
+        self._font = None
+        self._fg = 0x000000FF
+        self._has_scrollbar = False
+        super().re_skin()
 
     def _skin(self) -> None:
         from jive.ui.style import (
@@ -827,6 +1255,25 @@ class Menu(Widget):
         # Determine if scrollbar is needed
         self._has_scrollbar = (
             not self.hide_scrollbar and self.list_size > self.num_widgets
+        )
+
+        log.debug(
+            "Menu._layout: style=%s bounds=(%d,%d,%d,%d) "
+            "itemHeight=%d num_widgets=%d list_size=%d top_item=%d selected=%s "
+            "hide_scrollbar=%s _has_scrollbar=%s widgets_len=%d",
+            self.style,
+            bx,
+            by,
+            bw,
+            bh,
+            self.item_height,
+            self.num_widgets,
+            self.list_size,
+            self.top_item,
+            self.selected,
+            self.hide_scrollbar,
+            self._has_scrollbar,
+            len(self.widgets),
         )
 
         # Measure scrollbar
@@ -893,6 +1340,15 @@ class Menu(Widget):
             if hasattr(widget, "set_bounds"):
                 widget.set_bounds(x, y, item_w, self.item_height)
 
+            # Trigger recursive skin + layout on child widgets (e.g. Group)
+            # so that their sub-widgets get ordered and positioned.
+            # In the C original this happens automatically via the
+            # top-down layout pass; in Python we must call explicitly.
+            if hasattr(widget, "_skin"):
+                widget._skin()
+            if hasattr(widget, "_layout"):
+                widget._layout()
+
             num_in_line += 1
             if num_in_line >= self.items_per_line:
                 num_in_line = 0
@@ -951,21 +1407,23 @@ class Menu(Widget):
             txt_surf = self._font.render(self.accel_key, self._fg)
             if txt_surf is not None:
                 if not isinstance(txt_surf, SurfaceClass):
-                    txt_surf = SurfaceClass(txt_surf)
+                    txt_surf = SurfaceClass(txt_surf)  # type: ignore[assignment]
                 tw, th = txt_surf.get_size()
                 x = (bx + bw - tw) // 2
                 y = (by + bh - th) // 2
-                surface.blit(txt_surf, x, y)
+                surface.blit(txt_surf, x, y)  # type: ignore[arg-type]
 
         # Draw header widget
         if self.header_widget is not None and hasattr(self.header_widget, "draw"):
-            self.header_widget.draw(surface, layer)
+            self.header_widget.draw(surface, layer)  # type: ignore[call-arg]
 
     # ------------------------------------------------------------------
     # Iterate (jiveL_menu_iterate)
     # ------------------------------------------------------------------
 
-    def iterate(self, closure: Callable[..., Any]) -> None:
+    def iterate(
+        self, closure: Callable[..., Any], include_hidden: bool = False
+    ) -> None:
         """Iterate over child widgets (items, scrollbar, header)."""
         for widget in self.widgets:
             closure(widget)

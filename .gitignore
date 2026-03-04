@@ -9,11 +9,18 @@ __pycache__/
 # Distribution / packaging
 build/
 dist/
+dist-frozen/
 *.egg-info/
 *.egg
 .eggs/
 sdist/
 wheels/
+
+# Bundled assets (copied from jivelite by release workflow)
+jive/data/
+
+# PyInstaller (but keep sordino.spec — it's tracked)
+# *.spec
 
 # Virtual environments
 .venv/
@@ -24,6 +31,8 @@ env/
 # IDE / Editor files
 .idea/
 .vscode/
+.zed/
+.claude/
 *.swp
 *.swo
 *~
@@ -57,3 +66,31 @@ Desktop.ini
 
 # Settings persistence (runtime-generated)
 *.settings.json
+
+# Debug screenshots & images (runtime-generated)
+debug_*.bmp
+debug_*.png
+gui_*.png
+gui_*.bmp
+screenshot_*.png
+
+# Log files (runtime-generated)
+*.log
+
+# Debug output / trace files
+debug_out.txt
+debug_run.py
+diag_*.py
+trace_*.py
+
+# Session / agent context files (AI-generated)
+# KONTEXT.md is tracked — don't ignore it
+AGENT_TASKS.md
+INSTRUCTION.md
+lern.md
+
+
+
+# Reports & screenshots directories (runtime-generated)
+reports/
+screenshots/

@@ -210,8 +210,8 @@ class SocketTcpServer(SocketBase):
             peer_addr = new_sock.getpeername()
             sock_tcp._tcp_address = peer_addr[0]
             sock_tcp._tcp_port = peer_addr[1]
-        except OSError:
-            pass
+        except OSError as exc:
+            log.debug("_accept: could not get peer address: %s", exc)
 
         return sock_tcp
 

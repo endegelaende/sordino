@@ -56,6 +56,8 @@ class Canvas(Icon):
         custom drawing onto the given surface.
     """
 
+    __slots__ = ("_render_func",)
+
     def __init__(
         self,
         style: str,
@@ -75,7 +77,7 @@ class Canvas(Icon):
     # Drawing
     # ------------------------------------------------------------------
 
-    def draw(self, surface: Surface) -> None:
+    def draw(self, surface: Surface, layer: int = 0xFF) -> None:
         """
         Draw the canvas by calling the user-supplied render function.
 
@@ -83,6 +85,8 @@ class Canvas(Icon):
         ----------
         surface : Surface
             The target surface to draw onto.
+        layer : int
+            Bitmask of layers to draw (default ``0xFF`` = all layers).
         """
         self._render_func(surface)
 

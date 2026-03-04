@@ -76,6 +76,8 @@ class Checkbox(Icon):
         Initial selection state (default ``False``).
     """
 
+    __slots__ = ("selected", "closure")
+
     def __init__(
         self,
         style: str,

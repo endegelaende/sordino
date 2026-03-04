@@ -43,9 +43,9 @@ log = logger("jivelite.ui")
 # environments or when pygame is not fully initialised.
 _mixer = None
 try:
-    import pygame.mixer as _mixer
-except Exception:  # pragma: no cover
-    pass
+    import pygame.mixer as _mixer  # type: ignore[assignment]
+except Exception as exc:  # pragma: no cover
+    log.debug("import fallback: %s", exc)
 
 
 class Sound:
@@ -225,7 +225,7 @@ class Audio:
             return Sound(None, channel)
 
         try:
-            pg_sound = _mixer.Sound(filename)
+            pg_sound = _mixer.Sound(filename)  # type: ignore[attr-defined]
             log.debug("Loaded sound: %s", filename)
             return Sound(pg_sound, channel)
         except Exception:

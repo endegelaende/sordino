@@ -89,6 +89,8 @@ class ContextMenuWindow(Window):
         Defaults to ``False`` (shading is applied).
     """
 
+    __slots__ = ("no_shading", "is_top_context_menu")
+
     def __init__(
         self,
         title: Optional[str] = None,
@@ -179,7 +181,7 @@ class ContextMenuWindow(Window):
     # Show / Hide overrides
     # ------------------------------------------------------------------
 
-    def show(self, transition: Optional[Callable] = None) -> None:
+    def show(self, transition: Optional[Callable[..., Any]] = None) -> None:
         """
         Show the context menu window.
 
@@ -204,7 +206,7 @@ class ContextMenuWindow(Window):
             self.is_top_context_menu = True
 
     def hide(
-        self, transition: Optional[Callable] = None, sound: Optional[str] = None
+        self, transition: Optional[Callable[..., Any]] = None, sound: Optional[str] = None
     ) -> None:
         """
         Hide the context menu window.
@@ -227,7 +229,7 @@ class ContextMenuWindow(Window):
             if (
                 idx + 1 < len(stack)
                 and hasattr(stack[idx + 1], "is_context_menu")
-                and stack[idx + 1].is_context_menu()
+                and stack[idx + 1].is_context_menu()  # type: ignore[attr-defined]
             ):
                 super().hide(transition or transition_push_right_static_title, sound)
             else:
@@ -321,8 +323,8 @@ class ContextMenuWindow(Window):
                     and top_window.is_context_menu()
                 ):
                     return top_window  # type: ignore[return-value]
-        except (ImportError, AttributeError):
-            pass
+        except (ImportError, AttributeError) as exc:
+            log.debug("import fallback: %s", exc)
 
         return None
 
@@ -330,7 +332,7 @@ class ContextMenuWindow(Window):
     # Button actions (simplified interface for context menus)
     # ------------------------------------------------------------------
 
-    def set_button_action(self, button: str, action: Optional[str]) -> None:
+    def set_button_action(self, button: str, action: Optional[str]) -> None:  # type: ignore[override]
         """
         Set the action for a named button (e.g. ``"lbutton"``,
         ``"rbutton"``).
@@ -389,6 +391,6 @@ def _hide_context_menus() -> None:
         ]
 
         for w in to_hide:
-            w.hide()  # type: ignore[union-attr]
-    except (ImportError, AttributeError):
-        pass
+            w.hide()
+    except (ImportError, AttributeError) as exc:
+        log.debug("import fallback: %s", exc)

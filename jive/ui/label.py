@@ -61,7 +61,7 @@ from jive.utils.log import logger
 if TYPE_CHECKING:
     from jive.ui.event import Event
     from jive.ui.surface import Surface
-    from jive.ui.tile import JiveTile
+    from jive.ui.tile import JiveTile  # type: ignore[attr-defined]
     from jive.ui.timer import Timer
 
 __all__ = ["Label"]
@@ -163,6 +163,29 @@ class Label(Widget):
         before rendering.
     """
 
+    __slots__ = (
+        "value",
+        "priority_timer",
+        "previous_persistent_value",
+        "_label_w",
+        "_text_align",
+        "_bg_tile",
+        "_base_font",
+        "_base_line_height",
+        "_base_text_offset",
+        "_base_fg",
+        "_base_sh",
+        "_base_is_sh",
+        "_formats",
+        "_scroll_offset",
+        "_scroll_offset_step",
+        "_lines",
+        "_text_w",
+        "_text_h",
+        "_animation_handle",
+        "_text_stop_callback",
+    )
+
     def __init__(self, style: str, value: Any = None) -> None:
         if not isinstance(style, str):
             raise TypeError(f"style must be a string, got {type(style).__name__}")
@@ -212,11 +235,11 @@ class Label(Widget):
 
         self.add_listener(
             int(EVENT_FOCUS_GAINED),
-            lambda _evt: self._animate_scroll(True) or 0,
+            lambda _evt: self._animate_scroll(True) or 0,  # type: ignore[func-returns-value]
         )
         self.add_listener(
             int(EVENT_FOCUS_LOST),
-            lambda _evt: self._animate_scroll(False) or 0,
+            lambda _evt: self._animate_scroll(False) or 0,  # type: ignore[func-returns-value]
         )
 
     # ------------------------------------------------------------------
@@ -282,12 +305,40 @@ class Label(Widget):
         """Register a callback invoked when text scrolling pauses."""
         self._text_stop_callback = cb
 
-    # Alias
-    textStopCallback = set_text_stop_callback
+    @property
+    def textStopCallback(self) -> Optional[Callable[..., None]]:
+        """Lua-compatible property for the text-stop callback.
+
+        Supports both ``label.textStopCallback = cb`` (set) and
+        ``label.textStopCallback(label)`` (get + call), matching the
+        Lua pattern where this is a plain assignable field.
+        """
+        return self._text_stop_callback
+
+    @textStopCallback.setter
+    def textStopCallback(self, cb: Optional[Callable[..., None]]) -> None:
+        self._text_stop_callback = cb
 
     # ------------------------------------------------------------------
     # Skin (jiveL_label_skin)
     # ------------------------------------------------------------------
+
+    def re_skin(self) -> None:
+        """Reset all label-specific cached skin state, then call super."""
+        self._bg_tile = None
+        self._base_font = None
+        self._base_line_height = 0
+        self._base_text_offset = 0
+        self._base_fg = _JIVE_COLOR_BLACK
+        self._base_sh = _JIVE_COLOR_WHITE
+        self._base_is_sh = False
+        self._formats = []
+        self._lines = []
+        self._text_w = 0
+        self._text_h = 0
+        self._label_w = 0
+        self._scroll_offset = _SCROLL_PAD_START
+        super().re_skin()
 
     def _skin(self) -> None:
         """
@@ -343,24 +394,26 @@ class Label(Widget):
         num_format = style_array_size(self, "line")
         for i in range(num_format):
             fmt = _LabelFormat()
-            fmt.font = style_array_font(self, "line", i + 1, "font")
+            # Python lists are 0-based; the C/Lua original used 1-based
+            # indices (i+1) because Lua tables start at 1.  Our
+            # style_array_value indexes into a plain Python list, so we
+            # must pass the 0-based index directly.
+            fmt.font = style_array_font(self, "line", i, "font")
             if fmt.font is not None:
                 fmt_cap = _font_metric(fmt.font, "capheight")
-                fmt.line_height = style_array_int(
-                    self, "line", i + 1, "height", fmt_cap
-                )
+                fmt.line_height = style_array_int(self, "line", i, "height", fmt_cap)
                 fmt.text_offset = _font_metric(self._base_font, "offset")
                 f_size = getattr(fmt.font, "size", 0) if fmt.font else 0
                 if f_size > self._scroll_offset_step * _FONT_SCROLL_FACTOR:
                     self._scroll_offset_step = f_size // _FONT_SCROLL_FACTOR
 
             fmt_fg_packed, _fmt_fg_set = style_array_color(
-                self, "line", i + 1, "fg", _JIVE_COLOR_BLACK
+                self, "line", i, "fg", _JIVE_COLOR_BLACK
             )
             fmt.fg = fmt_fg_packed
-            fmt.is_fg = True  # always treat per-line fg as explicit
+            fmt.is_fg = bool(_fmt_fg_set)
             fmt_sh_packed, fmt_sh_set = style_array_color(
-                self, "line", i + 1, "sh", _JIVE_COLOR_BLACK
+                self, "line", i, "sh", _JIVE_COLOR_BLACK
             )
             fmt.sh = fmt_sh_packed
             fmt.is_sh = bool(fmt_sh_set) or fmt.sh != _JIVE_COLOR_BLACK
@@ -381,9 +434,10 @@ class Label(Widget):
 
         path = style_path(self)
         val = style_db.find_value(style_db.data, path, key)
-        # _SENTINEL_NIL is a module-private; if find_value returns a real
-        # value (not the default sentinel) it was explicitly set
-        return val is not None
+        # find_value returns _SENTINEL_NIL when the key is absent
+        from jive.ui.style import _SENTINEL_NIL
+
+        return val is not _SENTINEL_NIL
 
     # ------------------------------------------------------------------
     # Prepare text surfaces (static ``prepare()`` in jive_label.c)
@@ -552,7 +606,7 @@ class Label(Widget):
         # No scroll needed if text fits
         if self._text_w <= self._label_w:
             if self._text_stop_callback is not None:
-                self._text_stop_callback()
+                self._text_stop_callback(self)
             return
 
         self._scroll_offset += self._scroll_offset_step
@@ -564,7 +618,7 @@ class Label(Widget):
             # Pause
             self._scroll_offset = _SCROLL_PAD_LEFT
             if self._text_stop_callback is not None:
-                self._text_stop_callback()
+                self._text_stop_callback(self)
             return
 
         if self._scroll_offset < 0:

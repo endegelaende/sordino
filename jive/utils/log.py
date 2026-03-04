@@ -140,15 +140,27 @@ class JiveLogger:
         if self._logger.isEnabledFor(logging.INFO):
             self._logger.info("%s", _concat_args(args), stacklevel=2)
 
-    def warn(self, *args: object) -> None:
-        """Log a warning message."""
-        if self._logger.isEnabledFor(logging.WARNING):
-            self._logger.warning("%s", _concat_args(args), stacklevel=2)
+    def warn(self, *args: object, **kwargs: object) -> None:
+        """Log a warning message.
 
-    def error(self, *args: object) -> None:
-        """Log an error message. Includes traceback (matching Lua behavior)."""
+        Accepts ``exc_info=True`` and other keyword arguments supported
+        by the standard :meth:`logging.Logger.warning` method.
+        """
+        if self._logger.isEnabledFor(logging.WARNING):
+            self._logger.warning("%s", _concat_args(args), stacklevel=2, **kwargs)  # type: ignore[arg-type]
+
+    # Standard logging API alias — some code uses log.warning() instead
+    # of log.warn().  Both should work.
+    warning = warn
+
+    def error(self, *args: object, **kwargs: object) -> None:
+        """Log an error message.
+
+        Accepts ``exc_info=True`` and other keyword arguments supported
+        by the standard :meth:`logging.Logger.error` method.
+        """
         if self._logger.isEnabledFor(logging.ERROR):
-            self._logger.error("%s", _concat_args(args), stacklevel=2, exc_info=False)
+            self._logger.error("%s", _concat_args(args), stacklevel=2, **kwargs)  # type: ignore[arg-type]
 
     def set_level(self, level: str | int) -> None:
         """
@@ -170,6 +182,10 @@ class JiveLogger:
     def is_debug(self) -> bool:
         """Return True if debug logging is enabled."""
         return self._logger.isEnabledFor(logging.DEBUG)
+
+    def isEnabledFor(self, level: int) -> bool:
+        """Delegate to the underlying stdlib logger (Lua-compat alias)."""
+        return self._logger.isEnabledFor(level)
 
     def __repr__(self) -> str:
         return f"JiveLogger({self.category!r}, level={self.get_level()!r})"
@@ -239,14 +255,35 @@ def set_all_levels(level: str | int) -> None:
 
 def _concat_args(args: tuple[object, ...]) -> str:
     """
-    Concatenate log arguments into a single string.
+    Format log arguments into a single string.
 
-    In Lua, log:debug("Welcome ", name, ", good ", time) concatenates
-    all arguments. We replicate this behavior: all args are converted
-    to strings and joined without separator.
+    Supports two calling conventions:
+
+    1. **Python %-formatting** (preferred):
+       ``log.warn("timeout after %d seconds", timeout)``
+       When the first argument is a string containing ``%`` format
+       specifiers and additional arguments are supplied, standard
+       ``%``-formatting is applied.
+
+    2. **Lua-style concatenation** (legacy):
+       ``log.warn("Welcome ", name, ", good ", time)``
+       All arguments are stringified and joined without separator.
+
+    If %-formatting fails (e.g. wrong number of arguments or
+    unsupported format codes), the function falls back silently to
+    concatenation so that no log message is ever lost.
     """
     if len(args) == 0:
         return ""
     if len(args) == 1:
         return str(args[0])
+
+    # Try Python %-style formatting first
+    fmt = args[0]
+    if isinstance(fmt, str) and "%" in fmt:
+        try:
+            return fmt % args[1:]
+        except (TypeError, ValueError):
+            pass  # fall through to concatenation
+
     return "".join(str(a) for a in args)

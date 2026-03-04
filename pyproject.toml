@@ -1,20 +1,24 @@
+# ──────────────────────────────────────────────────────────────────────────────
+# Sordino — JiveLite-compatible Squeezebox controller UI
+# ──────────────────────────────────────────────────────────────────────────────
+
 [build-system]
 requires = ["setuptools>=68.0", "wheel"]
-build-backend = "setuptools.backends._legacy:_Backend"
+build-backend = "setuptools.build_meta"
 
 [project]
-name = "jivelite-py"
-version = "0.1.0"
-description = "Python3 port of Jivelite — Community Lyrion Music Server control application"
+name = "sordino"
+version = "0.5.0"
+description = "Sordino — JiveLite-compatible Squeezebox controller UI for Resonance and Lyrion Music Server"
 readme = "README.md"
 license = {text = "BSD-3-Clause"}
 requires-python = ">=3.10"
 authors = [
-    {name = "Jivelite Contributors"},
+    {name = "Sordino Contributors"},
 ]
-keywords = ["squeezebox", "lms", "lyrion", "music", "controller", "pygame"]
+keywords = ["squeezebox", "lms", "lyrion", "resonance", "music", "controller", "pygame", "sordino"]
 classifiers = [
-    "Development Status :: 2 - Pre-Alpha",
+    "Development Status :: 3 - Alpha",
     "Intended Audience :: End Users/Desktop",
     "License :: OSI Approved :: BSD License",
     "Operating System :: OS Independent",
@@ -23,30 +27,85 @@ classifiers = [
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
     "Topic :: Multimedia :: Sound/Audio",
 ]
 
 dependencies = [
-    "pygame>=2.5.0",
+    "pygame-ce>=2.5.0",
 ]
 
 [project.optional-dependencies]
+# Use legacy pygame instead of pygame-ce (mutually exclusive — install
+# one or the other, not both).
+pygame-legacy = ["pygame>=2.5.0"]
+
+# Frozen single-file / single-folder executables (like the original
+# jivelite.exe distribution).
+freeze = [
+    "pyinstaller>=6.0",
+]
+
 dev = [
     "pytest>=7.0",
     "pytest-cov>=4.0",
     "mypy>=1.0",
+    "ruff>=0.6.0",
 ]
 
 [project.scripts]
-jivelite = "jive.main:main"
+sordino = "jive.main:main"
+
+[project.urls]
+Homepage = "https://github.com/endegelaende/sordino"
+Repository = "https://github.com/endegelaende/sordino"
+Issues = "https://github.com/endegelaende/sordino/issues"
+
+# ──────────────────────────────────────────────────────────────────────────────
+# setuptools — package discovery & data files
+# ──────────────────────────────────────────────────────────────────────────────
 
 [tool.setuptools.packages.find]
 include = ["jive*"]
+
+[tool.setuptools.package-data]
+# Assets that live inside the jive package tree and MUST be included in
+# wheels / sdists so that `pip install sordino` works out of the box.
+jive = [
+    # Wallpaper images (bundled in sordino itself)
+    "applets/SetupWallpaper/wallpaper/*.png",
+    # Applet localisation strings
+    "applets/*/strings.txt",
+    # Skin images — only present after the release workflow (or a manual
+    # copy) places jivelite assets into jive/data/.
+    # When absent the globs simply match nothing (no build error).
+    "data/fonts/*.ttf",
+    "data/jive/*.png",
+    "data/jive/*.txt",
+    "data/applets/*/images/**/*.png",
+    "data/applets/*/images/**/*.jpg",
+    "data/applets/*/images/**/*.bmp",
+    "data/applets/NowPlaying/images/*.png",
+    "data/applets/Clock/images/**/*.png",
+]
+
+# share/ is NOT included via package-data (it is outside the jive
+# package).  For development, the search-path system in jive/system.py
+# finds share/jive/ relative to the project root.  For distribution,
+# the release workflow copies the needed files into jive/data/.
+
+# ──────────────────────────────────────────────────────────────────────────────
+# pytest
+# ──────────────────────────────────────────────────────────────────────────────
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["."]
 addopts = "-v --tb=short"
+
+# ──────────────────────────────────────────────────────────────────────────────
+# mypy
+# ──────────────────────────────────────────────────────────────────────────────
 
 [tool.mypy]
 python_version = "3.10"
@@ -58,3 +117,28 @@ check_untyped_defs = true
 [[tool.mypy.overrides]]
 module = "pygame.*"
 ignore_missing_imports = true
+
+# ──────────────────────────────────────────────────────────────────────────────
+# ruff
+# ──────────────────────────────────────────────────────────────────────────────
+
+[tool.ruff]
+target-version = "py310"
+line-length = 100
+
+[tool.ruff.lint]
+select = [
+    "E",      # pycodestyle errors
+    "W",      # pycodestyle warnings
+    "F",      # Pyflakes
+    "I",      # isort
+    "B",      # flake8-bugbear
+    "UP",     # pyupgrade
+    "RUF",    # Ruff-specific rules
+]
+ignore = [
+    "E501",   # line too long (handled by formatter)
+]
+
+[tool.ruff.lint.isort]
+known-first-party = ["jive"]

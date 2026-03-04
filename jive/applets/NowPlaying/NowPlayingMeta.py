@@ -150,8 +150,8 @@ class NowPlayingMeta(AppletMeta):
             from jive.jive_main import jive_main as _jm
 
             return _jm
-        except (ImportError, AttributeError):
-            pass
+        except (ImportError, AttributeError) as exc:
+            log.debug("_get_jive_main: jive_main not available: %s", exc)
 
         # Fallback: check for a module-level variable
         try:

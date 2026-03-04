@@ -114,7 +114,9 @@ class _GroupStub:
 
     __slots__ = ("_style", "_widgets")
 
-    def __init__(self, style: str = "", widgets: Optional[dict] = None) -> None:
+    def __init__(
+        self, style: str = "", widgets: Optional[Dict[str, Any]] = None  # type: ignore[name-defined]
+    ) -> None:
         self._style = style
         self._widgets = widgets or {}
 
@@ -195,30 +197,30 @@ class Iconbar:
             from jive.ui.icon import Icon
             from jive.ui.label import Label
 
-            self.icon_playmode = Icon("button_playmode_OFF")
-            self.icon_repeat = Icon("button_repeat_OFF")
-            self.icon_shuffle = Icon("button_shuffle_OFF")
-            self.icon_battery = Icon("button_battery_NONE")
-            self.icon_wireless = Icon("button_wireless_NONE")
-            self.icon_sleep = Icon("button_sleep_OFF")
-            self.icon_alarm = Icon("button_alarm_OFF")
-            self.button_time = Label("button_time", "XXXX")
+            self.icon_playmode = Icon("button_playmode_OFF")  # type: ignore[assignment]
+            self.icon_repeat = Icon("button_repeat_OFF")  # type: ignore[assignment]
+            self.icon_shuffle = Icon("button_shuffle_OFF")  # type: ignore[assignment]
+            self.icon_battery = Icon("button_battery_NONE")  # type: ignore[assignment]
+            self.icon_wireless = Icon("button_wireless_NONE")  # type: ignore[assignment]
+            self.icon_sleep = Icon("button_sleep_OFF")  # type: ignore[assignment]
+            self.icon_alarm = Icon("button_alarm_OFF")  # type: ignore[assignment]
+            self.button_time = Label("button_time", "XXXX")  # type: ignore[assignment]
 
-            self.iconbar_group = Group(
+            self.iconbar_group = Group(  # type: ignore[assignment]
                 "iconbar_group",
                 {
-                    "play": self.icon_playmode,
-                    "repeat_mode": self.icon_repeat,
-                    "shuffle": self.icon_shuffle,
-                    "alarm": self.icon_alarm,
-                    "sleep": self.icon_sleep,
-                    "battery": self.icon_battery,
-                    "wireless": self.icon_wireless,
+                    "play": self.icon_playmode,  # type: ignore[dict-item]
+                    "repeat_mode": self.icon_repeat,  # type: ignore[dict-item]
+                    "shuffle": self.icon_shuffle,  # type: ignore[dict-item]
+                    "alarm": self.icon_alarm,  # type: ignore[dict-item]
+                    "sleep": self.icon_sleep,  # type: ignore[dict-item]
+                    "battery": self.icon_battery,  # type: ignore[dict-item]
+                    "wireless": self.icon_wireless,  # type: ignore[dict-item]
                 },
             )
 
-            framework.add_widget(self.iconbar_group)
-            framework.add_widget(self.button_time)
+            framework.add_widget(self.iconbar_group)  # type: ignore[arg-type]
+            framework.add_widget(self.button_time)  # type: ignore[arg-type]
 
             self.button_time.add_timer(1000, lambda: self.update())
         except ImportError:

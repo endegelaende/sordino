@@ -225,7 +225,7 @@ class Scanner:
             popup.setAlwaysOnTop(True)
 
         title = Label("heading", "")
-        popup.addWidget(title)
+        popup.addWidget(title)  # type: ignore[attr-defined]
 
         def _slider_callback(
             slider_widget: Any, value: int, done: bool = False
@@ -244,7 +244,7 @@ class Scanner:
         self.heading = title
         self.scanner_group = Group("slider_group", {"slider": slider})
 
-        popup.addWidget(self.scanner_group)
+        popup.addWidget(self.scanner_group)  # type: ignore[attr-defined]
 
         # Event listener
         event_mask = 0
@@ -256,7 +256,7 @@ class Scanner:
             popup.addListener(event_mask, lambda evt: self.event(evt))
 
         # We handle events ourselves
-        popup.brieflyHandler = False
+        popup.brieflyHandler = False  # type: ignore[attr-defined]
 
         # Store references
         self.popup = popup
@@ -337,7 +337,7 @@ class Scanner:
 
         max_accel = 50
         if self.duration > 0:
-            max_accel = min(self.duration / 15, 50)
+            max_accel = min(self.duration / 15, 50)  # type: ignore[assignment]
         self.accel_count = min(self.accel_count + 1, max_accel)
         self.accel_delta = self.delta
         self.last_update = now
@@ -405,8 +405,8 @@ class Scanner:
             if applet_manager is not None:
                 applet_manager.call_service("deactivateScreensaver")
                 applet_manager.call_service("restartScreenSaverTimer")
-        except (ImportError, AttributeError):
-            pass
+        except (ImportError, AttributeError) as exc:
+            log.debug("event: screensaver service not available: %s", exc)
 
         # Import constants
         try:
@@ -427,20 +427,20 @@ class Scanner:
                 KEY_REW_SCAN,
             )
         except ImportError:
-            EVENT_SCROLL = 0x00000800
-            ACTION = 0x00080000
-            EVENT_KEY_PRESS = 0x00000002
-            EVENT_KEY_DOWN = 0x00000001
-            EVENT_KEY_UP = 0x00000004
-            EVENT_KEY_HOLD = 0x00000008
-            EVENT_CONSUME = 0x02
-            EVENT_UNUSED = 0x00
-            KEY_GO = 0x00000010
-            KEY_BACK = 0x00000020
-            KEY_FWD = 0x00000080
-            KEY_REW = 0x00000040
-            KEY_FWD_SCAN = 0x00010000
-            KEY_REW_SCAN = 0x00020000
+            EVENT_SCROLL = 0x00000800  # type: ignore[assignment]
+            ACTION = 0x00080000  # type: ignore[assignment]
+            EVENT_KEY_PRESS = 0x00000002  # type: ignore[assignment]
+            EVENT_KEY_DOWN = 0x00000001  # type: ignore[assignment]
+            EVENT_KEY_UP = 0x00000004  # type: ignore[assignment]
+            EVENT_KEY_HOLD = 0x00000008  # type: ignore[assignment]
+            EVENT_CONSUME = 0x02  # type: ignore[assignment]
+            EVENT_UNUSED = 0x00  # type: ignore[assignment]
+            KEY_GO = 0x00000010  # type: ignore[assignment]
+            KEY_BACK = 0x00000020  # type: ignore[assignment]
+            KEY_FWD = 0x00000080  # type: ignore[assignment]
+            KEY_REW = 0x00000040  # type: ignore[assignment]
+            KEY_FWD_SCAN = 0x00010000  # type: ignore[assignment]
+            KEY_REW_SCAN = 0x00020000  # type: ignore[assignment]
 
         # Determine if popup is already visible
         on_screen = True
@@ -530,8 +530,8 @@ class Scanner:
 
                     if _fw is not None and hasattr(_fw, "dispatchEvent"):
                         _fw.dispatchEvent(lower, event)
-                except ImportError:
-                    pass
+                except ImportError as exc:
+                    log.debug("event: framework not available for dispatch: %s", exc)
 
             return EVENT_CONSUME
 
@@ -585,7 +585,7 @@ class Scanner:
     # Helpers
     # ------------------------------------------------------------------
 
-    def _get_track_elapsed(self) -> Optional[tuple]:
+    def _get_track_elapsed(self) -> Optional[Tuple[Any, Any]]:  # type: ignore[name-defined]
         """Return ``(elapsed, duration)`` from the player, or ``None``."""
         if self.player is None:
             return None
@@ -618,11 +618,11 @@ class Scanner:
             from jive.ui.framework import framework as _fw
 
             if _fw is not None and hasattr(_fw, "getTicks"):
-                return _fw.getTicks()
+                return _fw.getTicks()  # type: ignore[no-any-return]
             if _fw is not None and hasattr(_fw, "get_ticks"):
                 return _fw.get_ticks()
-        except ImportError:
-            pass
+        except ImportError as exc:
+            log.debug("_get_ticks: framework not available: %s", exc)
         return int(_time.monotonic() * 1000)
 
     def _applet_string(self, token: str) -> str:

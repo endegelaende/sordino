@@ -27,7 +27,7 @@ from jive.utils.log import logger
 
 __all__ = ["Surface"]
 
-log = logger("jivelite.ui")
+log = logger("jive.ui.surface")
 
 # ---------------------------------------------------------------------------
 # Colour helpers
@@ -117,7 +117,7 @@ class Surface:
     * Lifecycle: ``release``
     """
 
-    __slots__ = ("_srf", "_offset_x", "_offset_y", "_clip_stack")
+    __slots__ = ("_srf", "_offset_x", "_offset_y", "_clip_stack", "__weakref__")
 
     def __init__(self, pg_surface: pygame.Surface) -> None:
         self._srf: Optional[pygame.Surface] = pg_surface
@@ -185,7 +185,7 @@ class Surface:
         return Surface(pg)
 
     @staticmethod
-    def draw_text(font: "Font", color: int, text: str) -> Optional[Surface]:  # noqa: F821
+    def draw_text(font: "Font", color: int, text: str) -> Optional[Surface]:  # type: ignore[name-defined]  # noqa: F821
         """
         Render *text* in *font* with *color* (32-bit RGBA).
 
@@ -231,25 +231,46 @@ class Surface:
     # ------------------------------------------------------------------
 
     def get_clip(self) -> tuple[int, int, int, int]:
-        """Return ``(x, y, w, h)`` of the current clip rectangle."""
+        """Return ``(x, y, w, h)`` in logical (offset-adjusted) coordinates.
+
+        Matches C ``jive_surface_get_clip`` which subtracts the current
+        offset so callers always work in widget-space coordinates.
+        """
         r = self.pg.get_clip()
-        return r.x, r.y, r.w, r.h
+        return r.x - self._offset_x, r.y - self._offset_y, r.w, r.h
 
     def set_clip(self, x: int, y: int, w: int, h: int) -> None:
-        """Set the clip rectangle."""
-        self.pg.set_clip(pygame.Rect(x, y, w, h))
+        """Set the clip rectangle (logical / widget-space coordinates).
+
+        Matches C ``jive_surface_set_clip`` which adds the current offset
+        before passing the rect to SDL.
+        """
+        self.pg.set_clip(pygame.Rect(x + self._offset_x, y + self._offset_y, w, h))
 
     def push_clip(self, x: int, y: int, w: int, h: int) -> None:
+        """Save the current clip and intersect with the given rectangle.
+
+        Coordinates are in logical widget-space.  Matches C
+        ``jive_surface_push_clip`` which goes through the offset-aware
+        ``get_clip`` / ``set_clip`` helpers.
         """
-        Save the current clip and intersect with the given rectangle.
-        """
+        # Save raw SDL clip for pop_clip (no offset adjustment needed
+        # on restore — we store exactly what SDL has).
         self._clip_stack.append(self.pg.get_clip())
-        old = self.pg.get_clip()
-        new = old.clip(pygame.Rect(x, y, w, h))
-        self.pg.set_clip(new)
+
+        # get_clip returns offset-adjusted (logical) coords
+        ox, oy, ow, oh = self.get_clip()
+        # Intersect in logical space
+        tmp = pygame.Rect(ox, oy, ow, oh).clip(pygame.Rect(x, y, w, h))
+        # set_clip adds the offset back
+        self.set_clip(tmp.x, tmp.y, tmp.w, tmp.h)
 
     def pop_clip(self) -> None:
-        """Restore the previously pushed clip rectangle."""
+        """Restore the previously pushed clip rectangle.
+
+        Restores the raw SDL clip saved by ``push_clip`` — no offset
+        adjustment because the saved value is already in SDL pixel coords.
+        """
         if self._clip_stack:
             self.pg.set_clip(self._clip_stack.pop())
 
@@ -410,8 +431,8 @@ class Surface:
             pygame.gfxdraw.pixel(
                 self.pg, self._ox(x), self._oy(y), _rgba_to_tuple(color)
             )
-        except OverflowError:
-            pass  # off-screen
+        except OverflowError as exc:
+            log.debug("pixel overflow: %s", exc)
 
     def hline(self, x1: int, x2: int, y: int, color: int) -> None:
         """Draw a horizontal line from ``(x1, y)`` to ``(x2, y)``."""
@@ -423,8 +444,8 @@ class Surface:
                 self._oy(y),
                 _rgba_to_tuple(color),
             )
-        except OverflowError:
-            pass
+        except OverflowError as exc:
+            log.debug("hline overflow: %s", exc)
 
     def vline(self, x: int, y1: int, y2: int, color: int) -> None:
         """Draw a vertical line from ``(x, y1)`` to ``(x, y2)``."""
@@ -436,8 +457,8 @@ class Surface:
                 self._oy(y2),
                 _rgba_to_tuple(color),
             )
-        except OverflowError:
-            pass
+        except OverflowError as exc:
+            log.debug("vline overflow: %s", exc)
 
     def rectangle(self, x1: int, y1: int, x2: int, y2: int, color: int) -> None:
         """Draw an unfilled rectangle."""
@@ -452,8 +473,8 @@ class Surface:
                 ),
                 _rgba_to_tuple(color),
             )
-        except OverflowError:
-            pass
+        except OverflowError as exc:
+            log.debug("rectangle overflow: %s", exc)
 
     def filled_rectangle(self, x1: int, y1: int, x2: int, y2: int, color: int) -> None:
         """Draw a filled rectangle."""
@@ -468,8 +489,8 @@ class Surface:
                 ),
                 _rgba_to_tuple(color),
             )
-        except OverflowError:
-            pass
+        except OverflowError as exc:
+            log.debug("filled_rectangle overflow: %s", exc)
 
     def line(self, x1: int, y1: int, x2: int, y2: int, color: int) -> None:
         """Draw a line."""
@@ -495,8 +516,8 @@ class Surface:
             pygame.gfxdraw.circle(
                 self.pg, self._ox(x), self._oy(y), r, _rgba_to_tuple(color)
             )
-        except OverflowError:
-            pass
+        except OverflowError as exc:
+            log.debug("circle overflow: %s", exc)
 
     def aacircle(self, x: int, y: int, r: int, color: int) -> None:
         """Draw an anti-aliased circle."""
@@ -504,8 +525,8 @@ class Surface:
             pygame.gfxdraw.aacircle(
                 self.pg, self._ox(x), self._oy(y), r, _rgba_to_tuple(color)
             )
-        except OverflowError:
-            pass
+        except OverflowError as exc:
+            log.debug("aacircle overflow: %s", exc)
 
     def filled_circle(self, x: int, y: int, r: int, color: int) -> None:
         """Draw a filled circle."""
@@ -513,8 +534,8 @@ class Surface:
             pygame.gfxdraw.filled_circle(
                 self.pg, self._ox(x), self._oy(y), r, _rgba_to_tuple(color)
             )
-        except OverflowError:
-            pass
+        except OverflowError as exc:
+            log.debug("filled_circle overflow: %s", exc)
 
     def ellipse(self, x: int, y: int, rx: int, ry: int, color: int) -> None:
         """Draw an unfilled ellipse."""
@@ -522,8 +543,8 @@ class Surface:
             pygame.gfxdraw.ellipse(
                 self.pg, self._ox(x), self._oy(y), rx, ry, _rgba_to_tuple(color)
             )
-        except OverflowError:
-            pass
+        except OverflowError as exc:
+            log.debug("ellipse overflow: %s", exc)
 
     def aaellipse(self, x: int, y: int, rx: int, ry: int, color: int) -> None:
         """Draw an anti-aliased ellipse."""
@@ -531,8 +552,8 @@ class Surface:
             pygame.gfxdraw.aaellipse(
                 self.pg, self._ox(x), self._oy(y), rx, ry, _rgba_to_tuple(color)
             )
-        except OverflowError:
-            pass
+        except OverflowError as exc:
+            log.debug("aaellipse overflow: %s", exc)
 
     def filled_ellipse(self, x: int, y: int, rx: int, ry: int, color: int) -> None:
         """Draw a filled ellipse."""
@@ -540,8 +561,8 @@ class Surface:
             pygame.gfxdraw.filled_ellipse(
                 self.pg, self._ox(x), self._oy(y), rx, ry, _rgba_to_tuple(color)
             )
-        except OverflowError:
-            pass
+        except OverflowError as exc:
+            log.debug("filled_ellipse overflow: %s", exc)
 
     def pie(self, x: int, y: int, r: int, start: int, end: int, color: int) -> None:
         """Draw an unfilled pie/arc segment."""
@@ -555,8 +576,8 @@ class Surface:
                 end,
                 _rgba_to_tuple(color),
             )
-        except OverflowError:
-            pass
+        except OverflowError as exc:
+            log.debug("pie overflow: %s", exc)
 
     def filled_pie(
         self, x: int, y: int, r: int, start: int, end: int, color: int
@@ -604,8 +625,8 @@ class Surface:
                 self._oy(y3),
                 _rgba_to_tuple(color),
             )
-        except OverflowError:
-            pass
+        except OverflowError as exc:
+            log.debug("trigon overflow: %s", exc)
 
     def aatrigon(
         self,
@@ -629,8 +650,8 @@ class Surface:
                 self._oy(y3),
                 _rgba_to_tuple(color),
             )
-        except OverflowError:
-            pass
+        except OverflowError as exc:
+            log.debug("aatrigon overflow: %s", exc)
 
     def filled_trigon(
         self,
@@ -654,8 +675,8 @@ class Surface:
                 self._oy(y3),
                 _rgba_to_tuple(color),
             )
-        except OverflowError:
-            pass
+        except OverflowError as exc:
+            log.debug("filled_trigon overflow: %s", exc)
 
     # ------------------------------------------------------------------
     # Fill  (convenience — not in original C API but very common)

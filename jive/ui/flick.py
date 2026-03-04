@@ -563,8 +563,8 @@ def _get_ticks() -> int:
         from jive.ui.framework import framework as fw
 
         return fw.get_ticks()
-    except (ImportError, AttributeError):
-        pass
+    except (ImportError, AttributeError) as exc:
+        log.debug("import fallback: %s", exc)
     # Fallback: use the timer module's tick function
     from jive.ui.timer import _get_ticks as timer_ticks
 

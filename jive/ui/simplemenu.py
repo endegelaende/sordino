@@ -50,6 +50,8 @@ from typing import (
 from jive.ui.constants import (
     EVENT_ACTION,
     EVENT_CONSUME,
+    EVENT_FOCUS_GAINED,
+    EVENT_FOCUS_LOST,
     EVENT_UNUSED,
     LAYER_ALL,
     WH_NIL,
@@ -219,6 +221,16 @@ class SimpleMenu(Menu):
         listener delegates to each item's ``callback`` key.
     """
 
+    __slots__ = (
+        "_items",
+        "_comparator",
+        "_widget_cache",
+        "_default_icons",
+        "_default_checks",
+        "_default_arrows",
+        "_close_callback",
+    )
+
     # Class-level comparators accessible as ``SimpleMenu.itemComparatorAlpha``
     itemComparatorAlpha = staticmethod(item_comparator_alpha)
     itemComparatorWeightAlpha = staticmethod(item_comparator_weight_alpha)
@@ -248,6 +260,11 @@ class SimpleMenu(Menu):
         # Widget cache — maps data-item id (or list index) to created widget
         self._widget_cache: Dict[Any, Widget] = {}
 
+        # Per-slot default sub-widgets (mirrors Lua's menu.icons/checks/arrows)
+        self._default_icons: List[Any] = []
+        self._default_checks: List[Any] = []
+        self._default_arrows: List[Any] = []
+
         # Close callback
         self._close_callback: Optional[Callable[..., Any]] = None
 
@@ -268,26 +285,117 @@ class SimpleMenu(Menu):
         event: "Event",
     ) -> int:
         """
-        Default item listener — looks up the ``callback`` key in the
-        data item at *index* and invokes it.
+        Default item listener — dispatches events to item callbacks.
+
+        Matches the Lua ``_itemListener`` in ``SimpleMenu.lua`` (lines 177-203):
+
+        - ``EVENT_ACTION`` type → ``item.callback(event, item)``
+        - ``ACTION`` type with action="go" → ``item.callback(event, item)``
+          (Menu's ``_event_handler`` forwards ACTION "go" through _item_listener
+          before falling to the ``_go_action`` handler)
+        - ``ACTION`` type with action="play" and ``isPlayableItem`` → callback
+        - ``ACTION`` type with action="add" and ``cmCallback`` → cmCallback
+        - ``EVENT_FOCUS_GAINED`` → ``item.focusGained``
+        - ``EVENT_FOCUS_LOST`` → ``item.focusLost``
         """
+        from jive.ui.constants import ACTION
+
         if 1 <= index <= len(data_list):
             data_item = data_list[index - 1]
         else:
-            return EVENT_UNUSED
+            return int(EVENT_UNUSED)
 
-        callback = data_item.get("callback")
-        if callback is not None:
+        etype = (
+            event.get_type()
+            if hasattr(event, "get_type")
+            else getattr(event, "type", 0)
+        )
+
+        # --- EVENT_ACTION or ACTION "go" → item.callback ---
+        # Lua: if (event:getType() == EVENT_ACTION and item.callback) or
+        #         (item.isPlayableItem and event:getType() == ACTION and
+        #          event:getAction() == "play") then
+        is_event_action = (etype == int(EVENT_ACTION))
+        is_action_go = (
+            etype == int(ACTION)
+            and hasattr(event, "get_action")
+            and event.get_action() == "go"
+        )
+        is_playable = (
+            data_item.get("isPlayableItem")
+            and etype == int(ACTION)
+            and hasattr(event, "get_action")
+            and event.get_action() == "play"
+        )
+
+        if (is_event_action or is_action_go or is_playable) and data_item.get("callback"):
+            callback = data_item["callback"]
+            # Play sound if specified
+            sound = data_item.get("sound")
+            if sound:
+                try:
+                    if hasattr(item, "playSound"):
+                        item.playSound(sound)
+                    elif hasattr(item, "play_sound"):
+                        item.play_sound(sound)
+                except Exception as exc:
+                    log.warning("play_sound callback: %s", exc)
+
             try:
-                r = callback(event, data_item)
-                if isinstance(r, int):
-                    return r
-                return EVENT_CONSUME
+                try:
+                    r = callback(event, data_item)
+                except TypeError:
+                    r = callback()
+                return int(r) if isinstance(r, int) else int(EVENT_CONSUME)
             except Exception:
-                log.warning("SimpleMenu item callback error", exc_info=True)
-                return EVENT_CONSUME
+                import traceback
 
-        return EVENT_UNUSED
+                log.warn(
+                    "SimpleMenu item callback error:\n%s",
+                    traceback.format_exc(),
+                )
+                return int(EVENT_CONSUME)
+
+        # --- ACTION "add" with cmCallback ---
+        if (
+            etype == int(ACTION)
+            and hasattr(event, "get_action")
+            and event.get_action() == "add"
+            and data_item.get("cmCallback")
+        ):
+            try:
+                r = data_item["cmCallback"](event, data_item)
+                return int(r) if isinstance(r, int) else int(EVENT_CONSUME)
+            except Exception:
+                return int(EVENT_CONSUME)
+
+        # --- EVENT_FOCUS_GAINED → item.focusGained ---
+        if etype == int(EVENT_FOCUS_GAINED):
+            focus_cb = data_item.get("focusGained")
+            if focus_cb is not None:
+                try:
+                    try:
+                        r = focus_cb(event, data_item)
+                    except TypeError:
+                        r = focus_cb()
+                    return int(r) if isinstance(r, int) else int(EVENT_CONSUME)
+                except Exception:
+                    return int(EVENT_CONSUME)
+
+        # --- EVENT_FOCUS_LOST → item.focusLost ---
+        if etype == int(EVENT_FOCUS_LOST):
+            focus_cb = data_item.get("focusLost")
+            if focus_cb is not None:
+                try:
+                    try:
+                        r = focus_cb(event, data_item)
+                    except TypeError:
+                        r = focus_cb()
+                    return int(r) if isinstance(r, int) else int(EVENT_CONSUME)
+                except Exception:
+                    return int(EVENT_CONSUME)
+
+        return int(EVENT_UNUSED)
 
     # ------------------------------------------------------------------
     # Item management (overrides / extensions)
@@ -322,7 +430,25 @@ class SimpleMenu(Menu):
     setItems = set_items
 
     def add_item(self, item: MenuItem) -> None:
-        """Append a single item to the end of the list."""
+        """Append a single item to the end of the list.
+
+        If an item with the same ``id`` already exists in the list it
+        is **replaced** in-place (matching the Lua original's
+        ``insertItem`` duplicate-ID semantics).
+        """
+        # Replace existing item with the same id (Lua: insertItem check)
+        item_id = item.get("id") if isinstance(item, dict) else None
+        if item_id is not None:
+            for i, existing in enumerate(self._items):
+                eid = existing.get("id") if isinstance(existing, dict) else None
+                if eid == item_id:
+                    self._items[i] = item
+                    self.list = self._items
+                    self.list_size = len(self._items)
+                    self._update_widgets()
+                    self.re_layout()
+                    return
+
         self._items.append(item)
         self.list = self._items
         self.list_size = len(self._items)
@@ -342,6 +468,10 @@ class SimpleMenu(Menu):
         """
         Insert *item* at 1-based *index*.
 
+        If an item with the same ``id`` already exists in the list it
+        is **replaced** in-place rather than inserted again (matching
+        the Lua original's ``insertItem`` duplicate-ID semantics).
+
         Parameters
         ----------
         item : dict
@@ -349,6 +479,19 @@ class SimpleMenu(Menu):
         index : int
             1-based position.
         """
+        # Replace existing item with the same id (Lua: insertItem check)
+        item_id = item.get("id") if isinstance(item, dict) else None
+        if item_id is not None:
+            for i, existing in enumerate(self._items):
+                eid = existing.get("id") if isinstance(existing, dict) else None
+                if eid == item_id:
+                    self._items[i] = item
+                    self.list = self._items
+                    self.list_size = len(self._items)
+                    self._update_widgets()
+                    self.re_layout()
+                    return
+
         idx = max(0, min(index - 1, len(self._items)))
         self._items.insert(idx, item)
         self.list = self._items
@@ -369,8 +512,8 @@ class SimpleMenu(Menu):
         """Remove *item* from the list by identity."""
         try:
             self._items.remove(item)
-        except ValueError:
-            pass
+        except ValueError as exc:
+            log.debug("remove failed: %s", exc)
         self.list = self._items
         self.list_size = len(self._items)
 
@@ -532,9 +675,19 @@ class SimpleMenu(Menu):
         """
         Synchronise the visible widget list with the underlying data.
 
-        Creates Label widgets (wrapped in Groups if an icon is present)
-        for each visible item slot.  Widgets are cached per data-item
-        identity to avoid unnecessary re-creation.
+        Mirrors the Lua original's ``_itemRenderer``: every visible item
+        is **always** wrapped in a :class:`Group` containing up to four
+        sub-widgets:
+
+        * ``text``  — a :class:`Label` (or Textarea for multiline)
+        * ``icon``  — the item's icon, or a default ``Icon("icon")``
+        * ``check`` — a RadioButton / Checkbox from the item dict,
+                       or a default ``Icon("check")``
+        * ``arrow`` — an arrow indicator, or a default ``Icon("arrow")``
+
+        Widgets are cached per data-item identity to avoid unnecessary
+        re-creation.  On cache hit the sub-widgets are updated in-place
+        (text value, icon/check/arrow swapped) exactly like Lua does.
         """
         if self.num_widgets <= 0 or self.list_size == 0:
             self.widgets = []
@@ -543,6 +696,15 @@ class SimpleMenu(Menu):
         from jive.ui.group import Group
         from jive.ui.icon import Icon
         from jive.ui.label import Label
+
+        # Per-slot default widgets (reused across re-layouts like Lua's
+        # ``menu.icons[i]``, ``menu.checks[i]``, ``menu.arrows[i]``).
+        while len(self._default_icons) < self.num_widgets:
+            self._default_icons.append(Icon("icon"))
+        while len(self._default_checks) < self.num_widgets:
+            self._default_checks.append(Icon("check"))
+        while len(self._default_arrows) < self.num_widgets:
+            self._default_arrows.append(Icon("arrow"))
 
         new_widgets: List[Widget] = []
 
@@ -554,47 +716,77 @@ class SimpleMenu(Menu):
             data_item = self._items[data_index - 1]
             cache_key = id(data_item)
 
-            # Check cache
+            item_style = data_item.get("style") or "item"
+            text = str(data_item.get("text", ""))
+
+            # Resolve icon / check / arrow — fall back to per-slot defaults
+            icon = data_item.get("icon") or self._default_icons[offset]
+            icon_style = data_item.get("iconStyle", "icon")
+            if hasattr(icon, "set_style"):
+                icon.set_style(icon_style)
+            elif hasattr(icon, "setStyle"):
+                icon.setStyle(icon_style)
+
+            check = data_item.get("check") or self._default_checks[offset]
+            arrow = data_item.get("arrow") or self._default_arrows[offset]
+
+            # Check cache — update in place if the Group already exists
             cached = self._widget_cache.get(cache_key)
-            if cached is not None:
+            if cached is not None and isinstance(cached, Group):
+                cached.set_style(item_style)
+                # Update text value
+                if hasattr(cached, "set_widget_value"):
+                    cached.set_widget_value("text", text)
+                elif hasattr(cached, "setWidgetValue"):
+                    cached.setWidgetValue("text", text)
+                # Swap sub-widgets if changed
+                if hasattr(cached, "set_widget"):
+                    cached.set_widget("icon", icon)
+                    cached.set_widget("check", check)
+                    cached.set_widget("arrow", arrow)
+                elif hasattr(cached, "setWidget"):
+                    cached.setWidget("icon", icon)
+                    cached.setWidget("check", check)
+                    cached.setWidget("arrow", arrow)
                 cached.parent = self
                 new_widgets.append(cached)
                 continue
 
-            # Determine style for this item
-            item_style = data_item.get("style", "item")
-            text = str(data_item.get("text", ""))
-            icon = data_item.get("icon")
-
-            is_selected = (self.selected == data_index) if self.selected else False
-
-            if icon is not None:
-                # Group with icon + label
-                label_widget = Label("text", text)
-                widgets_dict = {"text": label_widget, "icon": icon}
-                group = Group(item_style, widgets_dict)
-                group.parent = self
-                self._widget_cache[cache_key] = group
-                new_widgets.append(group)
-            else:
-                # Just a label
-                label_widget = Label(item_style, text)
-                label_widget.parent = self
-                self._widget_cache[cache_key] = label_widget
-                new_widgets.append(label_widget)
+            # Build a new Group with all four sub-widgets
+            label_widget = Label("text", text)
+            widgets_dict: Dict[str, Any] = {
+                "text": label_widget,
+                "icon": icon,
+                "check": check,
+                "arrow": arrow,
+            }
+            group = Group(item_style, widgets_dict)
+            group.parent = self
+            self._widget_cache[cache_key] = group
+            new_widgets.append(group)
 
         self.widgets = new_widgets
 
+        # Apply selected/pressed style modifiers (Lua _updateWidgets L1801-1826)
+        self._apply_selection_style()
+
+        # Update scrollbar position — matches Lua Menu.lua L1847
+        self._update_scrollbar()
+
     # ------------------------------------------------------------------
-    # Go action override — use item callback
+    # Go action override
     # ------------------------------------------------------------------
 
-    def _go_action(self) -> int:
-        """
-        Handle the 'go' action — invoke the selected item's callback.
+    def _go_action(self, event: Any = None) -> int:
+        """Handle the 'go' action — invoke the selected item's callback.
+
+        SimpleMenu overrides Menu._go_action because SimpleMenu can dispatch
+        to item callbacks directly from the data list, without requiring
+        visible widget instances (which only exist after _update_widgets
+        has run during layout).
         """
         if self.selected is None or self.list_size == 0:
-            return EVENT_UNUSED
+            return int(EVENT_UNUSED)
 
         if 1 <= self.selected <= self.list_size:
             data_item = self._items[self.selected - 1]
@@ -602,28 +794,33 @@ class SimpleMenu(Menu):
             # Play sound if specified
             sound = data_item.get("sound")
             if sound:
-                self.play_sound(sound)
+                try:
+                    self.play_sound(sound)
+                except Exception as exc:
+                    log.warning("play_sound callback: %s", exc)
 
-            # Try item listener first
+            # Dispatch through item_listener (e.g. _default_item_listener)
             if self.item_listener is not None:
-                from jive.ui.event import Event
+                from jive.ui.event import Event as Evt
 
-                evt = Event(EVENT_ACTION)
-                r = self.item_listener(self, self.list, data_item, self.selected, evt)
-                if r != EVENT_UNUSED:
+                evt = Evt(int(EVENT_ACTION))
+                r = self.item_listener(
+                    self, self.list, data_item, self.selected, evt
+                )
+                if r != int(EVENT_UNUSED):
                     return r
 
             # Fallback to widget event dispatch
             item_widget = self._selected_item_widget()
             if item_widget is not None:
-                from jive.ui.event import Event
+                from jive.ui.event import Event as Evt
 
-                evt = Event(EVENT_ACTION)
+                evt = Evt(int(EVENT_ACTION))
                 r = item_widget._event(evt)
-                if r != EVENT_UNUSED:
+                if r != int(EVENT_UNUSED):
                     return r
 
-        return EVENT_UNUSED
+        return int(EVENT_UNUSED)
 
     # ------------------------------------------------------------------
     # Representation

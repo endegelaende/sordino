@@ -74,12 +74,14 @@ class SnapshotWindow(Window):
         :class:`Window`).
     """
 
+    __slots__ = ()
+
     def __init__(
         self,
         window_id: Optional[Union[str, int]] = None,
     ) -> None:
         # Use an empty style string — snapshot windows don't need styling
-        super().__init__("", "", window_id=window_id)
+        super().__init__("", "", window_id=window_id)  # type: ignore[arg-type]
 
         # Override default transitions (matching Lua original):
         #   show: no transition (instant)
@@ -98,7 +100,7 @@ class SnapshotWindow(Window):
         self.set_show_framework_widgets(False)
 
         # No button actions
-        self._button_actions: dict = {}
+        self._button_actions: Dict[str, Any] = {}  # type: ignore[name-defined]
 
         # Capture the current screen
         self._bg: Optional[JiveSurface] = self._capture()
@@ -127,7 +129,7 @@ class SnapshotWindow(Window):
                 return None
 
             img = Surface.new_rgb(sw, sh)
-            fw.draw(img)
+            fw.draw(img)  # type: ignore[attr-defined]
             return img
         except Exception:
             log.warning("SnapshotWindow._capture failed", exc_info=True)

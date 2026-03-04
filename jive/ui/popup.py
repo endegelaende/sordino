@@ -74,6 +74,8 @@ class Popup(Window):
         An optional title string for the popup.
     """
 
+    __slots__ = ()
+
     def __init__(
         self,
         style: str,

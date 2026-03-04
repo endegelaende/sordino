@@ -104,7 +104,7 @@ def _get_applet_manager() -> Any:
         if _jm is not None:
             return getattr(_jm, "applet_manager", None)
     except ImportError:
-        pass
+        log.debug("_get_applet_manager: jive_main not yet available")
     return None
 
 
@@ -116,7 +116,7 @@ def _get_jnt() -> Any:
         if _jm is not None:
             return getattr(_jm, "jnt", None)
     except ImportError:
-        pass
+        log.debug("_get_jnt: jive_main not yet available")
     return None
 
 
@@ -131,13 +131,30 @@ def _get_jive_main() -> Any:
 
 
 def _get_system() -> Any:
-    """Return the System singleton, or ``None``."""
-    try:
-        from jive.system import System
+    """Return the System *instance*, or ``None``.
 
-        return System.instance()
-    except Exception:
-        return None
+    In the Lua original, ``System`` is a module-level singleton.
+    In Python, the single ``System`` instance is owned by
+    ``AppletManager`` (which receives it from ``JiveMain``).
+    """
+    try:
+        from jive.applet_manager import applet_manager as _mgr
+
+        if _mgr is not None and hasattr(_mgr, "system") and _mgr.system is not None:
+            return _mgr.system
+    except (ImportError, AttributeError):
+        pass
+
+    # Fallback: try JiveMain directly
+    try:
+        from jive.jive_main import jive_main as _jm
+
+        if _jm is not None and hasattr(_jm, "_system"):
+            return _jm._system
+    except (ImportError, AttributeError):
+        pass
+
+    return None
 
 
 # ── Discovery packet construction ────────────────────────────────────────
@@ -222,7 +239,7 @@ class SlimDiscoveryApplet(Applet):
     def applet_name(self) -> str:
         """Return the applet name from the manager entry, or a default."""
         if self._entry is not None:
-            return self._entry.get("applet_name", "SlimDiscovery")
+            return self._entry.get("applet_name", "SlimDiscovery")  # type: ignore[no-any-return]
         return "SlimDiscovery"
 
     def __init__(self) -> None:
@@ -251,7 +268,7 @@ class SlimDiscoveryApplet(Applet):
     # Applet lifecycle
     # ------------------------------------------------------------------
 
-    def init(self, **kwargs: Any) -> "SlimDiscoveryApplet":
+    def init(self, **kwargs: Any) -> "SlimDiscoveryApplet":  # type: ignore[override]
         """
         Initialise the applet — called after loading.
 
@@ -269,8 +286,8 @@ class SlimDiscoveryApplet(Applet):
                     )
                     if "poll" in cms_settings:
                         self.poll = cms_settings["poll"]
-            except Exception:
-                pass  # ChooseMusicSource may not be available
+            except Exception as exc:
+                log.debug("init: ChooseMusicSource not available: %s", exc)
 
         # If poll list is still empty, ensure we at least broadcast
         if not self.poll:
@@ -329,23 +346,23 @@ class SlimDiscoveryApplet(Applet):
         if self.timer is not None:
             try:
                 self.timer.stop()
-            except Exception:
-                pass
+            except Exception as exc:
+                log.warning("free: failed to stop discovery timer: %s", exc)
             self.timer = None
 
         if self.socket is not None:
             try:
                 self.socket.free()
-            except Exception:
-                pass
+            except Exception as exc:
+                log.warning("free: failed to free discovery socket: %s", exc)
             self.socket = None
 
         jnt = _get_jnt()
         if jnt is not None:
             try:
                 jnt.unsubscribe(self)
-            except Exception:
-                pass
+            except Exception as exc:
+                log.warning("free: failed to unsubscribe from jnt: %s", exc)
 
         return True
 
@@ -454,7 +471,7 @@ class SlimDiscoveryApplet(Applet):
         for ssid, entry in scan_table.items():
             player_id = Player.ssid_is_squeezebox(ssid)
             if player_id:
-                player = Player(jnt, player_id)
+                player = Player(jnt, player_id)  # type: ignore[arg-type]
                 last_scan = entry.get("lastScan", 0) if isinstance(entry, dict) else 0
                 try:
                     player.update_ssid(ssid, last_scan)
@@ -571,8 +588,8 @@ class SlimDiscoveryApplet(Applet):
         if self.state == "probing_player" and self.wireless is not None:
             try:
                 self.wireless.scan(lambda scan_table: self._scan_complete(scan_table))
-            except Exception:
-                pass
+            except Exception as exc:
+                log.debug("_discover: wireless scan failed: %s", exc)
 
         # Cleanup stale entries
         self._squeeze_center_cleanup()
@@ -603,8 +620,8 @@ class SlimDiscoveryApplet(Applet):
                     self.timer.restart(DISCOVERY_PERIOD)
                 else:
                     self.timer.restart(SEARCHING_PERIOD)
-            except Exception:
-                pass
+            except Exception as exc:
+                log.warning("_discover: failed to restart discovery timer: %s", exc)
 
     # ------------------------------------------------------------------
     # State machine
@@ -625,16 +642,20 @@ class SlimDiscoveryApplet(Applet):
             if self.timer is not None:
                 try:
                     self.timer.restart(0)
-                except Exception:
-                    pass
+                except Exception as exc:
+                    log.warning(
+                        "_set_state: failed to restart timer (same state): %s", exc
+                    )
             return
 
         # Restart discovery if we were disconnected
         if self.state == "disconnected" and self.timer is not None:
             try:
                 self.timer.restart(0)
-            except Exception:
-                pass
+            except Exception as exc:
+                log.warning(
+                    "_set_state: failed to restart timer (from disconnected): %s", exc
+                )
 
         self.state = state
 
@@ -642,16 +663,20 @@ class SlimDiscoveryApplet(Applet):
             if self.timer is not None:
                 try:
                     self.timer.stop()
-                except Exception:
-                    pass
+                except Exception as exc:
+                    log.warning(
+                        "_set_state: failed to stop timer (disconnected): %s", exc
+                    )
             self._disconnect()
 
         elif state == "searching":
             if self.timer is not None:
                 try:
                     self.timer.restart(0)
-                except Exception:
-                    pass
+                except Exception as exc:
+                    log.warning(
+                        "_set_state: failed to restart timer (searching): %s", exc
+                    )
             self._connect()
 
         elif state == "connected":
@@ -662,8 +687,10 @@ class SlimDiscoveryApplet(Applet):
             if self.timer is not None:
                 try:
                     self.timer.restart(0)
-                except Exception:
-                    pass
+                except Exception as exc:
+                    log.warning(
+                        "_set_state: failed to restart timer (probing): %s", exc
+                    )
             self._connect()
 
         if log.is_debug():
@@ -683,8 +710,8 @@ class SlimDiscoveryApplet(Applet):
                     server.connect()
                 except Exception as exc:
                     log.debug("connect to %s failed: %s", server, exc)
-        except ImportError:
-            pass
+        except ImportError as exc:
+            log.debug("_connect: SlimServer not available: %s", exc)
 
     def _disconnect(self) -> None:
         """Disconnect from all servers."""
@@ -696,8 +723,8 @@ class SlimDiscoveryApplet(Applet):
                     server.disconnect()
                 except Exception as exc:
                     log.debug("disconnect from %s failed: %s", server, exc)
-        except ImportError:
-            pass
+        except ImportError as exc:
+            log.debug("_disconnect: SlimServer not available: %s", exc)
 
     def _idle_disconnect(self) -> None:
         """
@@ -718,8 +745,8 @@ class SlimDiscoveryApplet(Applet):
                         server.connect()
                 except Exception as exc:
                     log.debug("idle_disconnect error for %s: %s", server, exc)
-        except ImportError:
-            pass
+        except ImportError as exc:
+            log.debug("_idle_disconnect: SlimServer not available: %s", exc)
 
     # ------------------------------------------------------------------
     # Notification handlers
@@ -758,7 +785,9 @@ class SlimDiscoveryApplet(Applet):
         except Exception as exc:
             log.debug("notify_playerConnected error: %s", exc)
 
-    def notify_serverDisconnected(self, slimserver: Any) -> None:
+    def notify_serverDisconnected(
+        self, slimserver: Any, num_user_requests: int
+    ) -> None:
         """Restart discovery if the current player's server disconnects."""
         log.debug("serverDisconnected %s", slimserver)
         try:
@@ -778,8 +807,12 @@ class SlimDiscoveryApplet(Applet):
 
             if self.state == "connected":
                 self._set_state("searching")
-        except Exception:
-            pass
+        except Exception as exc:
+            log.error(
+                "notify_serverDisconnected: failed to handle server disconnect: %s",
+                exc,
+                exc_info=True,
+            )
 
     def notify_serverConnected(self, slimserver: Any) -> None:
         """Stop discovery if the current player's server reconnects."""
@@ -800,8 +833,12 @@ class SlimDiscoveryApplet(Applet):
                 return
 
             self._set_state("connected")
-        except Exception:
-            pass
+        except Exception as exc:
+            log.error(
+                "notify_serverConnected: failed to handle server connect: %s",
+                exc,
+                exc_info=True,
+            )
 
     def notify_networkConnected(self) -> None:
         """Restart discovery on a new network connection."""
@@ -825,8 +862,12 @@ class SlimDiscoveryApplet(Applet):
                     if server is not None:
                         server.disconnect()
                         server.connect()
-            except Exception:
-                pass
+            except Exception as exc:
+                log.error(
+                    "notify_networkConnected: failed to reconnect to current server: %s",
+                    exc,
+                    exc_info=True,
+                )
         else:
             # Force re-connection to all servers
             self._disconnect()
@@ -894,8 +935,10 @@ class SlimDiscoveryApplet(Applet):
         if player and hasattr(player, "get_slim_server"):
             try:
                 server = player.get_slim_server()
-            except Exception:
-                pass
+            except Exception as exc:
+                log.warning(
+                    "notify_playerCurrent: failed to get player's server: %s", exc
+                )
 
         if server:
             try:
@@ -985,8 +1028,10 @@ class SlimDiscoveryApplet(Applet):
 
         try:
             self.store_settings()
-        except Exception:
-            pass
+        except Exception as exc:
+            log.error(
+                "notify_playerNewName: failed to store settings: %s", exc, exc_info=True
+            )
 
     # ------------------------------------------------------------------
     # Service methods
@@ -1018,8 +1063,8 @@ class SlimDiscoveryApplet(Applet):
                     if name == server_name:
                         log.debug("found initial server: %s", server)
                         return server
-            except ImportError:
-                pass
+            except ImportError as exc:
+                log.debug("getInitialSlimServer: SlimServer not available: %s", exc)
 
         log.debug("could not find initial server")
         return None
@@ -1039,16 +1084,18 @@ class SlimDiscoveryApplet(Applet):
         if player and hasattr(player, "get_name"):
             try:
                 name = player.get_name()
-            except Exception:
-                pass
+            except Exception as exc:
+                log.debug("setCurrentPlayer: failed to get player name: %s", exc)
         log.info("selected %s", name)
 
         try:
             from jive.slim.player import Player
 
             Player.set_current_player(player)
-        except ImportError:
-            pass
+        except ImportError as exc:
+            log.error(
+                "setCurrentPlayer: Player module not available: %s", exc, exc_info=True
+            )
 
     def discoverPlayers(self) -> None:
         """Trigger player discovery (service method)."""
@@ -1091,8 +1138,12 @@ class SlimDiscoveryApplet(Applet):
             current = Player.get_current_player()
             if current is not None:
                 current.disconnect_from_server()
-        except Exception:
-            pass
+        except Exception as exc:
+            log.error(
+                "disconnectPlayer: failed to disconnect current player: %s",
+                exc,
+                exc_info=True,
+            )
 
     def iteratePlayers(self) -> Iterator[tuple[Any, Any]]:
         """Iterate over all known players (service method)."""
@@ -1120,8 +1171,8 @@ class SlimDiscoveryApplet(Applet):
 
             for _ in Player.iterate():
                 count += 1
-        except ImportError:
-            pass
+        except ImportError as exc:
+            log.debug("countPlayers: Player module not available: %s", exc)
         return count
 
     def getPollList(self) -> List[str]:
@@ -1237,9 +1288,12 @@ class SlimDiscoveryApplet(Applet):
                 entry = mgr.get_applet_db().get(self.applet_name, {})
                 settings = entry.get("settings")
                 if settings is not None:
-                    return settings
-            except Exception:
-                pass
+                    return settings  # type: ignore[no-any-return]
+            except Exception as exc:
+                log.warning(
+                    "get_settings: failed to retrieve settings from AppletManager: %s",
+                    exc,
+                )
 
         # Fallback: use instance attribute (base Applet sets _settings = None)
         if self._settings is None:

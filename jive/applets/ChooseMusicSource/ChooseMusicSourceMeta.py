@@ -139,9 +139,9 @@ class ChooseMusicSourceMeta(AppletMeta):
                 entry = db.get("ChooseMusicSource", {})
                 settings = entry.get("settings")
                 if settings is not None:
-                    return settings
-            except Exception:
-                pass
+                    return settings  # type: ignore[no-any-return]
+            except Exception as exc:
+                log.error("get_settings: failed to retrieve settings from applet db: %s", exc, exc_info=True)
         return self.default_settings()
 
     # Lua alias
@@ -151,7 +151,7 @@ class ChooseMusicSourceMeta(AppletMeta):
     # Menu-item builder helper
     # ------------------------------------------------------------------
 
-    def menu_item(
+    def menu_item(  # type: ignore[override]
         self,
         item_id: str,
         node: str,
@@ -191,8 +191,8 @@ class ChooseMusicSourceMeta(AppletMeta):
                 resolved = strings_table.str(text_token)
                 if resolved:
                     text = resolved
-            except Exception:
-                pass
+            except Exception as exc:
+                log.debug("menu_item: failed to resolve text token %r: %s", text_token, exc)
 
         item: Dict[str, Any] = {
             "id": item_id,
@@ -214,7 +214,7 @@ class ChooseMusicSourceMeta(AppletMeta):
         return item
 
     # Lua alias
-    menuItem = menu_item
+    menuItem = menu_item  # type: ignore[assignment]
 
     # ------------------------------------------------------------------
     # Accessor helpers
@@ -230,8 +230,8 @@ class ChooseMusicSourceMeta(AppletMeta):
 
             if _jm is not None:
                 return getattr(_jm, "applet_manager", None)
-        except ImportError:
-            pass
+        except ImportError as exc:
+            log.debug("_get_applet_manager: jive_main not importable: %s", exc)
         return None
 
     def _get_jive_main(self) -> Any:
@@ -250,6 +250,6 @@ class ChooseMusicSourceMeta(AppletMeta):
 
             if _jm is not None:
                 return getattr(_jm, "jnt", None)
-        except ImportError:
-            pass
+        except ImportError as exc:
+            log.debug("_get_jnt: jive_main not importable: %s", exc)
         return None

@@ -94,6 +94,8 @@ class Choice(Label):
         (the first option).
     """
 
+    __slots__ = ("_options", "_selected_index", "closure")
+
     def __init__(
         self,
         style: str,

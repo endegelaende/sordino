@@ -332,8 +332,8 @@ class Task:
         queue = _task_queues[self.priority]
         try:
             queue.remove(self)
-        except ValueError:
-            pass
+        except ValueError as exc:
+            log.debug("remove failed: %s", exc)
 
     # ------------------------------------------------------------------
     # Class methods (mirror Lua module-level functions)

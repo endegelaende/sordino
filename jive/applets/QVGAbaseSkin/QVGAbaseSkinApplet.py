@@ -283,8 +283,8 @@ class QVGAbaseSkinApplet(Applet):
                 sw, sh = _fw.get_screen_size()
                 if sw > 0 and sh > 0:
                     screen_width, screen_height = sw, sh
-        except Exception:
-            pass
+        except Exception as exc:
+            log.warning("skin init: failed to query screen size from framework: %s", exc)
 
         # Skin suffix for icon variants
         skin_suffix = ".png"

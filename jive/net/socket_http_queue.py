@@ -162,7 +162,7 @@ class SocketHttpQueue(SocketHttp):
         request, close = self._http_queue.t_dequeue(self)
 
         if request is not None:
-            return request
+            return request  # type: ignore[no-any-return]
 
         if close:
             self.close("queue close")

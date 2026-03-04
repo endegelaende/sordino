@@ -99,7 +99,7 @@ class SocketTcp(SocketBase):
         super().__init__(jnt, name)
 
         self._tcp_address: str = address
-        self._tcp_port: int = port
+        self._tcp_port: int = int(port)
         self._tcp_connected: bool = False
 
     # ------------------------------------------------------------------

@@ -200,15 +200,15 @@ class Volume:
 
             if capture:
                 if hasattr(self.player, "getCaptureVolume"):
-                    return self.player.getCaptureVolume()
+                    return self.player.getCaptureVolume()  # type: ignore[no-any-return]
                 elif hasattr(self.player, "get_capture_volume"):
-                    return self.player.get_capture_volume()
+                    return self.player.get_capture_volume()  # type: ignore[no-any-return]
 
             # Use local player volume
             if hasattr(self.player, "getVolume"):
-                return self.player.getVolume()
+                return self.player.getVolume()  # type: ignore[no-any-return]
             elif hasattr(self.player, "get_volume"):
-                return self.player.get_volume()
+                return self.player.get_volume()  # type: ignore[no-any-return]
             return None
         else:
             # Use self.volume which is updated with server
@@ -269,10 +269,10 @@ class Volume:
             popup.setAlwaysOnTop(True)
 
         title = Label("heading", "")
-        popup.addWidget(title)
+        popup.addWidget(title)  # type: ignore[attr-defined]
 
         icon = Icon("icon_popup_volume")
-        popup.addWidget(icon)
+        popup.addWidget(icon)  # type: ignore[attr-defined]
 
         def _slider_callback(
             slider_widget: Any, value: int, done: bool = False
@@ -282,7 +282,7 @@ class Volume:
 
         slider = Slider("volume_slider", -1, 100, self.volume, _slider_callback)
 
-        popup.addWidget(Group("slider_group", {"slider": slider}))
+        popup.addWidget(Group("slider_group", {"slider": slider}))  # type: ignore[attr-defined]
 
         if hasattr(popup, "focusWidget"):
             popup.focusWidget(None)
@@ -305,7 +305,7 @@ class Volume:
             popup.addListener(event_mask, lambda evt: self.event(evt))
 
         # Disable briefly handler
-        popup.brieflyHandler = False
+        popup.brieflyHandler = False  # type: ignore[attr-defined]
 
         self.popup = popup
         self.title = title
@@ -421,13 +421,13 @@ class Volume:
         if mute:
             self.muting = True
             if hasattr(self.player, "mute"):
-                self.volume = self.player.mute(True) or 0
+                self.volume = self.player.mute(True) or 0  # type: ignore[union-attr]
             self.rate_limit_delta = 0
             self._update_display()
             return
 
         # Calculate new volume
-        new: int
+        new: int  # type: ignore[no-redef]
         if direct_set is not None:
             new = int(direct_set)
         else:
@@ -504,8 +504,8 @@ class Volume:
                     delay = _P.getRateLimitTime()
                 elif hasattr(_P, "get_rate_limit_time"):
                     delay = _P.get_rate_limit_time()
-            except ImportError:
-                pass
+            except ImportError as exc:
+                log.debug("_update_volume: Player not importable for rate limit time: %s", exc)
 
             try:
                 from jive.ui.timer import Timer as UiTimer
@@ -578,8 +578,8 @@ class Volume:
             if applet_manager is not None:
                 applet_manager.call_service("deactivateScreensaver")
                 applet_manager.call_service("restartScreenSaverTimer")
-        except (ImportError, AttributeError):
-            pass
+        except (ImportError, AttributeError) as exc:
+            log.debug("event: screensaver service not available: %s", exc)
 
         # Import constants
         try:
@@ -599,18 +599,18 @@ class Volume:
                 KEY_VOLUME_UP,
             )
         except ImportError:
-            EVENT_SCROLL = 0x00000800
-            EVENT_IR_ALL = 0x0000F000
-            EVENT_IR_DOWN = 0x00001000
-            EVENT_IR_REPEAT = 0x00004000
-            ACTION = 0x00080000
-            EVENT_KEY_PRESS = 0x00000002
-            EVENT_KEY_DOWN = 0x00000001
-            EVENT_KEY_UP = 0x00000004
-            EVENT_CONSUME = 0x02
-            EVENT_UNUSED = 0x00
-            KEY_VOLUME_DOWN = 0x00000400
-            KEY_VOLUME_UP = 0x00000200
+            EVENT_SCROLL = 0x00000800  # type: ignore[assignment]
+            EVENT_IR_ALL = 0x0000F000  # type: ignore[assignment]
+            EVENT_IR_DOWN = 0x00001000  # type: ignore[assignment]
+            EVENT_IR_REPEAT = 0x00004000  # type: ignore[assignment]
+            ACTION = 0x00080000  # type: ignore[assignment]
+            EVENT_KEY_PRESS = 0x00000002  # type: ignore[assignment]
+            EVENT_KEY_DOWN = 0x00000001  # type: ignore[assignment]
+            EVENT_KEY_UP = 0x00000004  # type: ignore[assignment]
+            EVENT_CONSUME = 0x02  # type: ignore[assignment]
+            EVENT_UNUSED = 0x00  # type: ignore[assignment]
+            KEY_VOLUME_DOWN = 0x00000400  # type: ignore[assignment]
+            KEY_VOLUME_UP = 0x00000200  # type: ignore[assignment]
 
         # Determine if popup is already visible
         on_screen = True
@@ -641,9 +641,9 @@ class Volume:
             try:
                 from jive.system import System
 
-                has_knob = System.hasVolumeKnob()
-            except (ImportError, AttributeError):
-                pass
+                has_knob = System.hasVolumeKnob()  # type: ignore[attr-defined]
+            except (ImportError, AttributeError) as exc:
+                log.debug("event: System.hasVolumeKnob not available: %s", exc)
 
             if not has_knob:
                 if scroll > 0:
@@ -729,8 +729,8 @@ class Volume:
 
                     if _fw is not None and hasattr(_fw, "dispatchEvent"):
                         _fw.dispatchEvent(lower, event)
-                except ImportError:
-                    pass
+                except ImportError as exc:
+                    log.debug("event: framework not available for dispatch: %s", exc)
 
             return EVENT_CONSUME
 
@@ -749,9 +749,9 @@ class Volume:
             try:
                 from jive.system import System
 
-                has_knob = System.hasVolumeKnob()
-            except (ImportError, AttributeError):
-                pass
+                has_knob = System.hasVolumeKnob()  # type: ignore[attr-defined]
+            except (ImportError, AttributeError) as exc:
+                log.debug("event: System.hasVolumeKnob not available: %s", exc)
 
             if (keycode & (KEY_VOLUME_UP | KEY_VOLUME_DOWN)) != 0 and has_knob:
                 if keycode == KEY_VOLUME_UP:
@@ -872,11 +872,11 @@ class Volume:
             from jive.ui.framework import framework as _fw
 
             if _fw is not None and hasattr(_fw, "getTicks"):
-                return _fw.getTicks()
+                return _fw.getTicks()  # type: ignore[no-any-return]
             if _fw is not None and hasattr(_fw, "get_ticks"):
                 return _fw.get_ticks()
-        except ImportError:
-            pass
+        except ImportError as exc:
+            log.debug("_get_ticks: framework not available: %s", exc)
         import time
 
         return int(time.monotonic() * 1000)

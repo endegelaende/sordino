@@ -125,15 +125,15 @@ class Timeinput:
             if raw_hour is not None:
                 try:
                     self.init_hour = int(raw_hour)
-                except (ValueError, TypeError):
-                    pass
+                except (ValueError, TypeError) as exc:
+                    log.debug("init_hour parse: %s", exc)
 
             raw_minute = init_time.get("minute")
             if raw_minute is not None:
                 try:
                     self.init_minute = int(raw_minute)
-                except (ValueError, TypeError):
-                    pass
+                except (ValueError, TypeError) as exc:
+                    log.debug("init_minute parse: %s", exc)
 
             self.init_ampm = init_time.get("ampm")
 
@@ -198,8 +198,8 @@ class Timeinput:
                 if isinstance(item, dict):
                     return str(item.get("text", ""))
                 return str(item)
-            except (IndexError, AttributeError, TypeError):
-                pass
+            except (IndexError, AttributeError, TypeError) as exc:
+                log.debug("get_middle_index fallback: %s", exc)
 
         # Fallback: use selected index and list access
         selected = getattr(menu, "selected", None)
@@ -252,8 +252,8 @@ class Timeinput:
             from jive.ui.framework import framework as fw
 
             fw.style_changed()
-        except (ImportError, AttributeError):
-            pass
+        except (ImportError, AttributeError) as exc:
+            log.debug("import fallback: %s", exc)
 
     # ------------------------------------------------------------------
     # Build time-input widgets

@@ -63,7 +63,7 @@ if TYPE_CHECKING:
     from jive.ui.event import Event
     from jive.ui.font import Font
     from jive.ui.surface import Surface
-    from jive.ui.tile import JiveTile
+    from jive.ui.tile import JiveTile  # type: ignore[attr-defined]
 
 __all__ = ["Textarea"]
 
@@ -81,6 +81,36 @@ class Textarea(Widget):
     text : str
         The initial text to display.
     """
+
+    __slots__ = (
+        "text",
+        "top_line",
+        "visible_lines",
+        "num_lines",
+        "line_height",
+        "pixel_offset_y",
+        "pixel_offset_y_header_widget",
+        "current_shift_direction",
+        "hide_scrollbar",
+        "is_header_widget",
+        "is_menu_child",
+        "_font",
+        "_fg",
+        "_sh",
+        "_is_sh",
+        "_bg_tile",
+        "_text_offset",
+        "_y_offset",
+        "_align",
+        "_lines",
+        "_line_width",
+        "_has_scrollbar",
+        "scrollbar",
+        "drag_origin",
+        "drag_y_since_shift",
+        "slider_drag_in_progress",
+        "body_drag_in_progress",
+    )
 
     def __init__(self, style: str, text: str = "") -> None:
         if not isinstance(style, str):
@@ -126,7 +156,7 @@ class Textarea(Widget):
         self.scrollbar.parent = self
 
         # Drag state
-        self.drag_origin: dict = {}
+        self.drag_origin: Dict[str, Any] = {}  # type: ignore[name-defined]
         self.drag_y_since_shift: int = 0
         self.slider_drag_in_progress: bool = False
         self.body_drag_in_progress: bool = False
@@ -280,8 +310,8 @@ class Textarea(Widget):
             return EVENT_CONSUME
 
         if etype == EVENT_IR_DOWN or etype == EVENT_IR_REPEAT:
-            if event.is_ir_code("arrow_up") or event.is_ir_code("arrow_down"):
-                scroll_amount = 1 if event.is_ir_code("arrow_down") else -1
+            if event.is_ir_code("arrow_up") or event.is_ir_code("arrow_down"):  # type: ignore[attr-defined]
+                scroll_amount = 1 if event.is_ir_code("arrow_down") else -1  # type: ignore[attr-defined]
                 self.scroll_by(scroll_amount)
                 return EVENT_CONSUME
 
@@ -335,6 +365,23 @@ class Textarea(Widget):
     # Skin (jiveL_textarea_skin)
     # ------------------------------------------------------------------
 
+    def re_skin(self) -> None:
+        """Reset all textarea-specific cached skin state, then call super."""
+        self._font = None
+        self._fg = 0x000000FF
+        self._sh = 0xFFFFFFFF
+        self._is_sh = False
+        self._bg_tile = None
+        self._text_offset = 0
+        self._y_offset = 0
+        self._align = 0
+        self.line_height = 0
+        self.num_lines = 0
+        self.visible_lines = 0
+        self.top_line = 0
+        self._lines = []
+        super().re_skin()
+
     def _skin(self) -> None:
         from jive.ui.style import (
             style_align,
@@ -352,7 +399,7 @@ class Textarea(Widget):
 
         color_val, is_set = style_color(self, "sh", 0xFFFFFFFF)
         self._sh = color_val
-        self._is_sh = is_set
+        self._is_sh = is_set  # type: ignore[assignment]
 
         fg_val, _ = style_color(self, "fg", 0x000000FF)
         self._fg = fg_val
@@ -581,8 +628,8 @@ class Textarea(Widget):
                 try:
                     _, _, _, ph = parent.get_bounds()
                     clip_h = ph - pt - pb
-                except Exception:
-                    pass
+                except Exception as exc:
+                    log.warning("get_bounds for clip: %s", exc)
         else:
             y_offset = 0
             clip_h = bh - pt
@@ -626,8 +673,8 @@ class Textarea(Widget):
                     sh_surf = self._font.render(line_text, self._sh)
                     if sh_surf is not None:
                         if not isinstance(sh_surf, SurfaceClass):
-                            sh_surf = SurfaceClass(sh_surf)
-                        surface.blit(sh_surf, x + 1, y + 1)
+                            sh_surf = SurfaceClass(sh_surf)  # type: ignore[assignment]
+                        surface.blit(sh_surf, x + 1, y + 1)  # type: ignore[arg-type]
 
                 # Foreground text
                 from jive.ui.surface import Surface as SurfaceClass
@@ -635,8 +682,8 @@ class Textarea(Widget):
                 fg_surf = self._font.render(line_text, self._fg)
                 if fg_surf is not None:
                     if not isinstance(fg_surf, SurfaceClass):
-                        fg_surf = SurfaceClass(fg_surf)
-                    surface.blit(fg_surf, x, y)
+                        fg_surf = SurfaceClass(fg_surf)  # type: ignore[assignment]
+                    surface.blit(fg_surf, x, y)  # type: ignore[arg-type]
 
                 y += self.line_height
 
@@ -709,7 +756,9 @@ class Textarea(Widget):
     # Iterate — textarea has scrollbar child
     # ------------------------------------------------------------------
 
-    def iterate(self, closure: Callable[..., Any]) -> None:
+    def iterate(
+        self, closure: Callable[..., Any], include_hidden: bool = False
+    ) -> None:
         """Iterate over child widgets (scrollbar)."""
         if self.scrollbar is not None:
             closure(self.scrollbar)

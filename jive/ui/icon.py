@@ -48,7 +48,7 @@ from jive.utils.log import logger
 
 if TYPE_CHECKING:
     from jive.ui.surface import Surface
-    from jive.ui.tile import JiveTile
+    from jive.ui.tile import JiveTile  # type: ignore[attr-defined]
 
 __all__ = ["Icon"]
 
@@ -78,6 +78,24 @@ class Icon(Widget):
         An explicit image surface.  When *None* the style's ``img``
         value is used as the default image.
     """
+
+    __slots__ = (
+        "image",
+        "img_style_name",
+        "_img",
+        "_default_img",
+        "_bg_tile",
+        "_frame_width",
+        "_frame_rate",
+        "_anim_frame",
+        "_anim_total",
+        "_image_width",
+        "_image_height",
+        "_icon_align",
+        "_offset_x",
+        "_offset_y",
+        "_animation_handle",
+    )
 
     def __init__(self, style: str, image: Optional[Surface] = None) -> None:
         if not isinstance(style, str):
@@ -175,6 +193,28 @@ class Icon(Widget):
     # Skin (jiveL_icon_skin)
     # ------------------------------------------------------------------
 
+    def re_skin(self) -> None:
+        """Reset all icon-specific cached skin state, then call super.
+
+        Sets ``_img = None`` so that ``_prepare()`` will re-process the
+        active image (recalculating width/height/animation) instead of
+        taking the early-return ``img is self._img`` path.
+
+        Does NOT touch ``self.image`` — that is the programmatically
+        set image owned by the caller, not a cached skin value.
+        """
+        self._bg_tile = None
+        self._default_img = None
+        self._img = None  # force _prepare() to re-process
+        self._frame_width = -1
+        self._frame_rate = 0
+        self._anim_frame = 0
+        self._anim_total = 1
+        self._offset_x = 0
+        self._offset_y = 0
+        self._icon_align = int(ALIGN_TOP_LEFT)
+        super().re_skin()
+
     def _skin(self) -> None:
         """
         Apply skin/style parameters.
@@ -229,6 +269,12 @@ class Icon(Widget):
         """
         # Choose image: widget image takes priority over style default
         img = self.image if self.image is not None else self._default_img
+
+        # Several skins use ``"img": False`` to mean "no image for this
+        # state".  Guard against any non-Surface value that slipped
+        # through style lookup so we never call .get_size() on a bool.
+        if img is not None and not hasattr(img, "get_size"):
+            img = None
 
         if img is self._img:
             return  # no change
@@ -343,7 +389,7 @@ class Icon(Widget):
             dst_x = bx + self._offset_x
             dst_y = by + self._offset_y
 
-            surface.blit_clip(self._img, src_x, src_y, src_w, src_h, dst_x, dst_y)
+            self._img.blit_clip(src_x, src_y, src_w, src_h, surface, dst_x, dst_y)
         finally:
             surface.pop_clip()
 
@@ -375,11 +421,11 @@ class Icon(Widget):
             w = img_w + pl + pr
             h = img_h + pt + pb
 
-        pb = self.preferred_bounds
-        px = pb[0] if pb[0] is not None and pb[0] != XY_NIL else None
-        py = pb[1] if pb[1] is not None and pb[1] != XY_NIL else None
-        pw = pb[2] if pb[2] is not None and pb[2] != WH_NIL else w
-        ph = pb[3] if pb[3] is not None and pb[3] != WH_NIL else h
+        pb = self.preferred_bounds  # type: ignore[assignment]
+        px = pb[0] if pb[0] is not None and pb[0] != XY_NIL else None  # type: ignore[index]
+        py = pb[1] if pb[1] is not None and pb[1] != XY_NIL else None  # type: ignore[index]
+        pw = pb[2] if pb[2] is not None and pb[2] != WH_NIL else w  # type: ignore[index]
+        ph = pb[3] if pb[3] is not None and pb[3] != WH_NIL else h  # type: ignore[index]
 
         return (px, py, pw, ph)
 

@@ -95,7 +95,7 @@ SOCKET_BODY_TIMEOUT = 70  # response body in 70 seconds
 _credentials: Dict[str, Dict[str, str]] = {}
 
 # User-Agent version string placeholder
-_JIVE_VERSION = "jivelite-py/0.1.0"
+_JIVE_VERSION = "sordino/0.5.0"
 _MACHINE = "jivelite"
 _ARCH = "python"
 
@@ -407,7 +407,7 @@ class SocketHttp(SocketTcp):
 
         ip, port = self.t_get_address_port()
 
-        req_headers = self._http_send_request.t_get_request_headers()
+        req_headers = self._http_send_request.t_get_request_headers()  # type: ignore[union-attr]
 
         # Set Host header if not already provided
         if "Host" not in req_headers:
@@ -417,8 +417,8 @@ class SocketHttp(SocketTcp):
                 headers["Host"] = f"{self.host}:{port}"
 
         # Set Content-Length for POST requests
-        if self._http_send_request.t_has_body():
-            body = self._http_send_request.t_body()
+        if self._http_send_request.t_has_body():  # type: ignore[union-attr]
+            body = self._http_send_request.t_body()  # type: ignore[union-attr]
             if body is not None:
                 if isinstance(body, str):
                     headers["Content-Length"] = str(len(body.encode("utf-8")))
@@ -703,8 +703,8 @@ class SocketHttp(SocketTcp):
                     parts = line.split(" ", 2)
                     if len(parts) >= 2 and parts[0].startswith("HTTP/"):
                         try:
-                            status_code[0] = int(parts[1])
-                            status_line[0] = line
+                            status_code[0] = int(parts[1])  # type: ignore[call-overload]
+                            status_line[0] = line  # type: ignore[call-overload]
                         except ValueError:
                             sock_self.close("malformed status line")
                             return None
@@ -782,7 +782,7 @@ class SocketHttp(SocketTcp):
         if mode == "chunked":
             self._recv_chunked(sink_mode, connection_close, body_buffer)
         elif mode == "by-length":
-            content_length = int(content_length_str)
+            content_length = int(content_length_str)  # type: ignore[arg-type]
             self._recv_by_length(
                 sink_mode, connection_close, content_length, body_buffer
             )
@@ -812,18 +812,13 @@ class SocketHttp(SocketTcp):
 
         if sink_mode == "jive-concat":
             blob = b"".join(data_chunks)
-            try:
-                text = blob.decode("utf-8", errors="replace")
-            except Exception:
-                text = blob.decode("latin-1")
-            self._http_recv_request.t_set_response_body(text)
+            # Pass raw bytes — Lua strings are byte arrays and sinks
+            # (especially artwork) need the binary data intact.  Sinks
+            # that need text can decode themselves.
+            self._http_recv_request.t_set_response_body(blob)
         elif sink_mode == "jive-by-chunk":
             if final_data is not None:
-                try:
-                    text = final_data.decode("utf-8", errors="replace")
-                except Exception:
-                    text = final_data.decode("latin-1")
-                self._http_recv_request.t_set_response_body(text)
+                self._http_recv_request.t_set_response_body(final_data)
             else:
                 self._http_recv_request.t_set_response_body(None)
 
@@ -936,6 +931,11 @@ class SocketHttp(SocketTcp):
 
         if initial_data:
             data_chunks.append(initial_data)
+            # Deliver initial data immediately for by-chunk mode,
+            # since Python's select() won't report buffered userspace
+            # data as readable.
+            if sink_mode == "jive-by-chunk":
+                self._deliver_to_sink(sink_mode, [], initial_data)
 
         def _body_pump(network_err: Optional[str] = None) -> Optional[bool]:
             if network_err:
@@ -1011,6 +1011,82 @@ class SocketHttp(SocketTcp):
         # 3 = reading chunk terminator (CRLF after data)
         chunk_state = [1]
         chunk_remaining = [0]
+        done = [False]
+
+        def _process_buffer() -> bool:
+            """
+            Process all complete chunks from the buffer.
+
+            Returns True if the response is complete (last chunk or error),
+            False if more data is needed.
+            """
+            while True:
+                if chunk_state[0] == 1:
+                    # Reading chunk size line
+                    idx = buf[0].find(b"\r\n")
+                    if idx == -1:
+                        return False  # Need more data
+
+                    size_line = buf[0][:idx].decode("ascii", errors="replace")
+                    buf[0] = buf[0][idx + 2 :]
+
+                    # Strip chunk extensions (after ';')
+                    size_str = size_line.split(";")[0].strip()
+                    try:
+                        chunk_size = int(size_str, 16)
+                    except ValueError:
+                        log.error("invalid chunk size: %s", size_str)
+                        sock_self.close("invalid chunk size")
+                        return True
+
+                    if chunk_size == 0:
+                        # Last chunk — done
+                        if sink_mode == "jive-concat":
+                            sock_self._deliver_to_sink(sink_mode, data_chunks, None)
+                        else:
+                            sock_self._deliver_to_sink(sink_mode, [], None)
+                        sock_self._recv_complete(connection_close)
+                        return True
+
+                    chunk_remaining[0] = chunk_size
+                    chunk_state[0] = 2
+
+                elif chunk_state[0] == 2:
+                    # Reading chunk data
+                    available = len(buf[0])
+                    if available == 0:
+                        return False  # Need more data
+
+                    to_read = min(available, chunk_remaining[0])
+                    chunk_data = buf[0][:to_read]
+                    buf[0] = buf[0][to_read:]
+                    chunk_remaining[0] -= to_read
+
+                    if sink_mode == "jive-by-chunk":
+                        sock_self._deliver_to_sink(sink_mode, [], chunk_data)
+                    data_chunks.append(chunk_data)
+
+                    if chunk_remaining[0] == 0:
+                        chunk_state[0] = 3
+
+                elif chunk_state[0] == 3:
+                    # Reading chunk terminator CRLF
+                    if len(buf[0]) < 2:
+                        return False  # Need more data
+
+                    # Skip the CRLF
+                    buf[0] = buf[0][2:]
+                    chunk_state[0] = 1
+
+            return False
+
+        # Process any initial data immediately (synchronously).
+        # This is critical because Python's select() does not have a
+        # "dirty" check like LuaSocket — data already buffered in
+        # userspace won't trigger select() readability.
+        if initial_data:
+            if _process_buffer():
+                return  # Response complete from initial data alone
 
         def _body_pump(network_err: Optional[str] = None) -> Optional[bool]:
             if network_err:
@@ -1037,8 +1113,10 @@ class SocketHttp(SocketTcp):
                     sock_self._recv_complete(connection_close)
                     return None
                 buf[0] += new_data
-            except BlockingIOError:
-                pass
+            except BlockingIOError as exc:
+                log.debug(
+                    "%s:_recv_chunked._body_pump: would block: %s", sock_self, exc
+                )
             except OSError as exc:
                 if "timeout" in str(exc).lower():
                     pass
@@ -1052,64 +1130,7 @@ class SocketHttp(SocketTcp):
                     return None
 
             # Process buffered data
-            while True:
-                if chunk_state[0] == 1:
-                    # Reading chunk size line
-                    idx = buf[0].find(b"\r\n")
-                    if idx == -1:
-                        return None  # Need more data
-
-                    size_line = buf[0][:idx].decode("ascii", errors="replace")
-                    buf[0] = buf[0][idx + 2 :]
-
-                    # Strip chunk extensions (after ';')
-                    size_str = size_line.split(";")[0].strip()
-                    try:
-                        chunk_size = int(size_str, 16)
-                    except ValueError:
-                        log.error("invalid chunk size: %s", size_str)
-                        sock_self.close("invalid chunk size")
-                        return None
-
-                    if chunk_size == 0:
-                        # Last chunk — done
-                        if sink_mode == "jive-concat":
-                            sock_self._deliver_to_sink(sink_mode, data_chunks, None)
-                        else:
-                            sock_self._deliver_to_sink(sink_mode, [], None)
-                        sock_self._recv_complete(connection_close)
-                        return None
-
-                    chunk_remaining[0] = chunk_size
-                    chunk_state[0] = 2
-
-                elif chunk_state[0] == 2:
-                    # Reading chunk data
-                    available = len(buf[0])
-                    if available == 0:
-                        return None  # Need more data
-
-                    to_read = min(available, chunk_remaining[0])
-                    chunk_data = buf[0][:to_read]
-                    buf[0] = buf[0][to_read:]
-                    chunk_remaining[0] -= to_read
-
-                    if sink_mode == "jive-by-chunk":
-                        sock_self._deliver_to_sink(sink_mode, [], chunk_data)
-                    data_chunks.append(chunk_data)
-
-                    if chunk_remaining[0] == 0:
-                        chunk_state[0] = 3
-
-                elif chunk_state[0] == 3:
-                    # Reading chunk terminator CRLF
-                    if len(buf[0]) < 2:
-                        return None  # Need more data
-
-                    # Skip the CRLF
-                    buf[0] = buf[0][2:]
-                    chunk_state[0] = 1
-
+            _process_buffer()
             return None
 
         self.t_add_read(_body_pump, SOCKET_BODY_TIMEOUT)

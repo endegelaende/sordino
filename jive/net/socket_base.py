@@ -118,8 +118,8 @@ class SocketBase:
             self.t_remove_write()
             try:
                 self.t_sock.close()
-            except OSError:
-                pass
+            except OSError as exc:
+                log.debug("close: error closing socket: %s", exc)
             self.t_sock = None
 
             self.socket_inactive()

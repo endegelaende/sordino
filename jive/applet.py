@@ -144,7 +144,7 @@ class Applet:
                 if _mgr is not None:
                     _mgr._free_applet_by_entry(applet_ref._entry)
 
-        window.add_listener(EVENT_WINDOW_POP, _on_pop)
+        window.add_listener(EVENT_WINDOW_POP, _on_pop)  # type: ignore[arg-type]
 
     def tie_and_show_window(self, window: "Window", *args: Any, **kwargs: Any) -> None:
         """Tie *window* to this applet and show it.

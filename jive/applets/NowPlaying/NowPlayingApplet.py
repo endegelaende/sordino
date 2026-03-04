@@ -30,6 +30,7 @@ from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 from jive.applet import Applet
 from jive.ui.constants import (
     EVENT_CONSUME,
+    EVENT_KEY_DOWN,
     EVENT_KEY_PRESS,
     EVENT_SCROLL,
     EVENT_UNUSED,
@@ -75,7 +76,9 @@ _SCROLL_TIMEOUT = 750
 # ---------------------------------------------------------------------------
 
 
-def _uses(parent: dict, value: Optional[dict] = None) -> dict:
+def _uses(
+    parent: Dict[str, Any], value: Optional[Dict[str, Any]] = None
+) -> Dict[str, Any]:
     """Create a style dict that inherits from *parent*.
 
     Works like Lua ``_uses()`` — recursively inherits table keys.
@@ -125,8 +128,8 @@ def _get_jive_main() -> Any:
         from jive.jive_main import jive_main
 
         return jive_main
-    except (ImportError, AttributeError):
-        pass
+    except (ImportError, AttributeError) as exc:
+        log.debug("_get_jive_main primary import failed: %s", exc)
     try:
         import jive.jive_main as _mod
 
@@ -137,9 +140,9 @@ def _get_jive_main() -> Any:
 
 def _get_framework() -> Any:
     try:
-        from jive.ui.framework import Framework
+        from jive.ui.framework import framework
 
-        return Framework
+        return framework
     except ImportError:
         return None
 
@@ -247,6 +250,63 @@ def _Event() -> Any:
     if "Event" not in _ui_cache:
         _ui_cache["Event"] = _import_ui_class("event", "Event")
     return _ui_cache["Event"]
+
+
+# ---------------------------------------------------------------------------
+# Track-change transition (module-level, like Lua _nowPlayingTrackTransition)
+# ---------------------------------------------------------------------------
+
+
+def _now_playing_track_transition(old_window: Any, new_window: Any) -> Any:
+    """2-frame alpha-fade transition for track changes.
+
+    Captures the old window into an off-screen surface, then blends it
+    over the new window across 2 frames with decreasing alpha.
+
+    Mirrors Lua ``_nowPlayingTrackTransition()`` in
+    ``NowPlayingApplet.lua`` L587–614.
+    """
+    Surface = _Surface()
+    Framework = _get_framework()
+
+    frames = [2]
+    scale = 255 / 2  # 127.5 per frame
+
+    # Capture old window content into an off-screen surface
+    fw = None
+    try:
+        from jive.ui.framework import framework as _fw
+
+        fw = _fw
+    except (ImportError, AttributeError) as exc:
+        log.debug("framework import for transition failed: %s", exc)
+
+    sw, sh = (800, 480)
+    if fw is not None:
+        try:
+            sw, sh = fw.get_screen_size()
+        except Exception as exc:
+            log.warning("get_screen_size failed, using defaults: %s", exc)
+
+    srf = Surface.new_rgb(sw, sh)
+    old_window.draw(srf, int(LAYER_ALL))
+
+    def _step(widget: Any, surface: Any) -> None:
+        alpha = int(math.floor(((frames[0] - 1) * scale) + 0.5))
+
+        new_window.draw(surface, int(LAYER_ALL))
+        srf.blit_alpha(surface, 0, 0, alpha)
+
+        frames[0] -= 1
+        if frames[0] == 0:
+            if fw is not None:
+                fw._kill_transition()
+
+    return _step
+
+
+# Lua alias
+_nowPlayingTrackTransition = _now_playing_track_transition
 
 
 # ---------------------------------------------------------------------------
@@ -419,7 +479,7 @@ class NowPlayingApplet(Applet):
                 if not self.selectedStyle and v["enabled"]:
                     self.selectedStyle = v["style"]
                 elif self.selectedStyle == v["style"] and not v["enabled"]:
-                    self.selectedStyle = False
+                    self.selectedStyle = False  # type: ignore[assignment]
 
         # Verify selected style is available
         if self.selectedStyle:
@@ -427,7 +487,7 @@ class NowPlayingApplet(Applet):
                 s["enabled"] and s["style"] == self.selectedStyle for s in audited
             )
             if not found:
-                self.selectedStyle = False
+                self.selectedStyle = False  # type: ignore[assignment]
 
         # Corner case: nothing enabled — enable everything possible
         if not any(s["enabled"] for s in audited):
@@ -493,7 +553,7 @@ class NowPlayingApplet(Applet):
             selected = v.get("enabled", True)
             style_key = v["style"]
 
-            def _make_cb(sk: str) -> Callable:
+            def _make_cb(sk: str) -> Callable[..., Any]:
                 def _on_check(obj: Any, is_selected: bool) -> None:
                     s = self.get_settings() or {}
                     if is_selected:
@@ -646,7 +706,9 @@ class NowPlayingApplet(Applet):
             if self.titleGroup:
                 self.change_title_text(self._title_text(mode))
 
-    def notify_playerTrackChange(self, player: Any, now_playing: Any) -> None:
+    def notify_playerTrackChange(
+        self, player: Any, now_playing: Any, artwork: Any
+    ) -> None:
         if player is not self.player:
             return
         log.debug("notify_playerTrackChange: %s", now_playing)
@@ -681,7 +743,7 @@ class NowPlayingApplet(Applet):
         if hasattr(self.snapshot, "replace"):
             self.snapshot.replace(self.window)
         if hasattr(self.window, "replace"):
-            self.window.replace(self.snapshot)
+            self.window.replace(self.snapshot, _now_playing_track_transition)
 
         if (
             player_status
@@ -973,6 +1035,8 @@ class NowPlayingApplet(Applet):
     def _update_all(self) -> None:
         player_status = self._player_status()
         if not player_status:
+            # Volume is independent of player status — always update it
+            self._update_volume()
             return
 
         item_loop = player_status.get("item_loop")
@@ -1035,7 +1099,7 @@ class NowPlayingApplet(Applet):
             if buttons.get("shuffle"):
                 shuffle_btn = buttons["shuffle"]
 
-                def _make_shuffle_cb(cmd: Any) -> Callable:
+                def _make_shuffle_cb(cmd: Any) -> Callable[..., Any]:
                     def _cb() -> int:
                         pid = self._player_id()
                         server = self._player_server()
@@ -1055,7 +1119,7 @@ class NowPlayingApplet(Applet):
             if buttons.get("repeat"):
                 repeat_btn = buttons["repeat"]
 
-                def _make_repeat_cb(cmd: Any) -> Callable:
+                def _make_repeat_cb(cmd: Any) -> Callable[..., Any]:
                     def _cb() -> int:
                         pid = self._player_id()
                         server = self._player_server()
@@ -1098,6 +1162,15 @@ class NowPlayingApplet(Applet):
                         self.controlsGroup.setWidget("shuffleMode", self.shuffleButton)
                     if self.repeatButton:
                         self.controlsGroup.setWidget("repeatMode", self.repeatButton)
+                # Bug 15618: explicitly set style of rew and fwd here,
+                # since setWidget doesn't appear to be doing the job.
+                if hasattr(self.controlsGroup, "getWidget"):
+                    rew_w = self.controlsGroup.getWidget("rew")
+                    if rew_w and hasattr(rew_w, "setStyle"):
+                        rew_w.setStyle("rew")
+                    fwd_w = self.controlsGroup.getWidget("fwd")
+                    if fwd_w and hasattr(fwd_w, "setStyle"):
+                        fwd_w.setStyle("fwd")
 
     def _refresh_right_button(self) -> None:
         playlist_size = self._player_playlist_size()
@@ -1125,7 +1198,10 @@ class NowPlayingApplet(Applet):
             self.rbutton = "playlist"
 
     def _remap_button(
-        self, key: str, new_style: Optional[str], new_callback: Optional[Callable]
+        self,
+        key: str,
+        new_style: Optional[str],
+        new_callback: Optional[Callable[..., Any]],
     ) -> None:
         if not self.controlsGroup:
             return
@@ -1453,7 +1529,7 @@ class NowPlayingApplet(Applet):
                 track.get("artist", ""),
                 track.get("album", ""),
             ]
-        return track.get("text", "\n\n\n")
+        return track.get("text", "\n\n\n")  # type: ignore[no-any-return]
 
     # ------------------------------------------------------------------
     # Window listeners
@@ -1461,39 +1537,79 @@ class NowPlayingApplet(Applet):
 
     def _install_listeners(self, window: Any) -> None:
         Framework = _get_framework()
+        log.info(
+            "_install_listeners: window=%s, Framework=%s",
+            type(window).__name__ if window else None,
+            Framework,
+        )
 
         # Window-active → update all
         if hasattr(window, "addListener"):
             window.addListener(
                 EVENT_WINDOW_ACTIVE,
-                lambda event=None: (self._update_all(), EVENT_UNUSED)[-1],
+                lambda event=None: (self._update_all(), EVENT_UNUSED)[-1],  # type: ignore[func-returns-value]
             )
 
         def _show_playlist_action(*_a: Any, **_kw: Any) -> int:
+            log.info("NowPlaying._show_playlist_action: called (go action)")
             if hasattr(window, "playSound"):
                 window.playSound("WINDOWSHOW")
             playlist_size = self._player_playlist_size() or 0
+            log.info(
+                "NowPlaying._show_playlist_action: playlist_size=%s, player=%s",
+                playlist_size,
+                self.player,
+            )
             mgr = _get_applet_manager()
             if playlist_size == 1:
                 if mgr:
+                    log.info("NowPlaying._show_playlist_action: calling showTrackOne")
                     mgr.call_service("showTrackOne")
             else:
                 if mgr:
+                    log.info("NowPlaying._show_playlist_action: calling showPlaylist")
                     mgr.call_service("showPlaylist")
             return EVENT_CONSUME
 
-        # Key-press handler for LEFT / RIGHT
+        # KEY_DOWN handler for LEFT only — react immediately on key
+        # press (not on key release) so that "back" navigation feels
+        # instant, matching the approach used by Menu for UP/DOWN.
+        #
+        # RIGHT is intentionally NOT handled here.  KEY_DOWN events
+        # repeat when the key is held (pygame.key.set_repeat) and the
+        # repeated "go" actions would be forwarded to the Playlist
+        # menu that opens, causing it to activate the selected track
+        # and restart playback.  RIGHT is handled on KEY_PRESS (once,
+        # on key-up) below — exactly matching the original Lua code.
+        if hasattr(window, "addListener"):
+
+            def _key_down(event: Any) -> int:
+                kc = event.get_keycode() if hasattr(event, "get_keycode") else None
+                if kc == KEY_LEFT:
+                    log.debug("NowPlaying._key_down: LEFT → back")
+                    if Framework is not None and hasattr(Framework, "push_action"):
+                        Framework.push_action("back")
+                    return EVENT_CONSUME
+                return EVENT_UNUSED
+
+            window.addListener(EVENT_KEY_DOWN, _key_down)
+
+        # KEY_PRESS handler for LEFT (consume to prevent double action)
+        # and RIGHT (trigger "go" to show playlist).
+        # This matches the original Lua: both LEFT and RIGHT are
+        # handled on EVENT_KEY_PRESS.  LEFT is also handled on
+        # KEY_DOWN above for instant response; here we just consume it.
         if hasattr(window, "addListener"):
 
             def _key_press(event: Any) -> int:
-                kc = event.getKeycode() if hasattr(event, "getKeycode") else None
+                kc = event.get_keycode() if hasattr(event, "get_keycode") else None
                 if kc == KEY_LEFT:
-                    if Framework is not None and hasattr(Framework, "pushAction"):
-                        Framework.pushAction("back")
+                    # Already handled on KEY_DOWN — just consume.
                     return EVENT_CONSUME
                 if kc == KEY_RIGHT:
-                    if Framework is not None and hasattr(Framework, "pushAction"):
-                        Framework.pushAction("go")
+                    log.debug("NowPlaying._key_press: RIGHT → go")
+                    if Framework is not None and hasattr(Framework, "push_action"):
+                        Framework.push_action("go")
                     return EVENT_CONSUME
                 return EVENT_UNUSED
 
@@ -1502,6 +1618,7 @@ class NowPlayingApplet(Applet):
         # Action listeners
         if hasattr(window, "addActionListener"):
             window.addActionListener("go", self, _show_playlist_action)
+            log.info("NowPlaying._install_listeners: registered 'go' action listener")
             window.addActionListener(
                 "go_home",
                 self,
@@ -1516,6 +1633,9 @@ class NowPlayingApplet(Applet):
                 "go_now_playing_or_playlist",
                 self,
                 _show_playlist_action,
+            )
+            log.info(
+                "NowPlaying._install_listeners: registered action listeners: go, go_home, go_now_playing, go_now_playing_or_playlist"
             )
 
         # Scroll listener for NP-style toggling
@@ -1617,12 +1737,9 @@ class NowPlayingApplet(Applet):
         self._refresh_right_button()
 
         if old_window and hasattr(self.window, "replace"):
-            Window = _Window()
-            trans = None
-            if no_trans and hasattr(Window, "transitionNone"):
-                trans = Window.transitionNone
-            elif hasattr(Window, "transitionFadeIn"):
-                trans = Window.transitionFadeIn
+            from jive.ui.window import transition_fade_in, transition_none
+
+            trans = transition_none if no_trans else transition_fade_in
             self.window.replace(old_window, trans)
 
     # Lua alias
@@ -1779,7 +1896,7 @@ class NowPlayingApplet(Applet):
                     if hasattr(self.scrollSwitchTimer, "restart"):
                         self.scrollSwitchTimer.restart()
 
-            self.artistalbumTitle.textStopCallback = _aa_stop  # type: ignore[attr-defined]
+            self.artistalbumTitle.textStopCallback = _aa_stop
         else:
             if self.artistTitle and hasattr(self.artistTitle, "__setattr__"):
 
@@ -1796,7 +1913,7 @@ class NowPlayingApplet(Applet):
                         if self.albumTitle and hasattr(self.albumTitle, "animate"):
                             self.albumTitle.animate(True)
 
-                self.artistTitle.textStopCallback = _artist_stop  # type: ignore[attr-defined]
+                self.artistTitle.textStopCallback = _artist_stop
 
             if self.albumTitle and hasattr(self.albumTitle, "__setattr__"):
 
@@ -1816,7 +1933,7 @@ class NowPlayingApplet(Applet):
                         if hasattr(self.scrollSwitchTimer, "restart"):
                             self.scrollSwitchTimer.restart()
 
-                self.albumTitle.textStopCallback = _album_stop  # type: ignore[attr-defined]
+                self.albumTitle.textStopCallback = _album_stop
 
         # Goto (seek) timer
         if self.gotoTimer is None:
@@ -1946,9 +2063,9 @@ class NowPlayingApplet(Applet):
 
         self.volSlider = Slider("npvolumeB", 0, 100, 0, _vol_drag, _vol_drag_end)
         if hasattr(self.volSlider, "__setattr__"):
-            self.volSlider.jumpOnDown = True  # type: ignore[attr-defined]
-            self.volSlider.pillDragOnly = True  # type: ignore[attr-defined]
-            self.volSlider.dragThreshold = 5  # type: ignore[attr-defined]
+            self.volSlider.jumpOnDown = True
+            self.volSlider.pillDragOnly = True
+            self.volSlider.dragThreshold = 5
 
         # Preset actions
         if hasattr(window, "addActionListener"):
@@ -1966,7 +2083,7 @@ class NowPlayingApplet(Applet):
                 action_str = f"set_preset_{i}"
                 preset_idx = i
 
-                def _make_preset(idx: int) -> Callable:
+                def _make_preset(idx: int) -> Callable[..., Any]:
                     def _cb(*_a: Any, **_kw: Any) -> int:
                         mgr = _get_applet_manager()
                         if mgr:
@@ -1984,7 +2101,7 @@ class NowPlayingApplet(Applet):
                 "page_down",
                 self,
                 lambda *_a, **_kw: (
-                    Framework.dispatchEvent(self.volSlider, Event(EVENT_SCROLL, 1))
+                    Framework.dispatchEvent(self.volSlider, Event(EVENT_SCROLL, rel=1))
                     if Framework and hasattr(Framework, "dispatchEvent")
                     else None,
                     EVENT_CONSUME,
@@ -1994,7 +2111,7 @@ class NowPlayingApplet(Applet):
                 "page_up",
                 self,
                 lambda *_a, **_kw: (
-                    Framework.dispatchEvent(self.volSlider, Event(EVENT_SCROLL, -1))
+                    Framework.dispatchEvent(self.volSlider, Event(EVENT_SCROLL, rel=-1))
                     if Framework and hasattr(Framework, "dispatchEvent")
                     else None,
                     EVENT_CONSUME,
@@ -2033,32 +2150,53 @@ class NowPlayingApplet(Applet):
         )
 
         # Volume down / up buttons for devices with on-screen controls
-        from jive.system import System as _System
+        def _get_system_instance() -> Any:
+            try:
+                from jive.applet_manager import applet_manager as _mgr
+
+                if (
+                    _mgr is not None
+                    and hasattr(_mgr, "system")
+                    and _mgr.system is not None
+                ):
+                    return _mgr.system
+            except (ImportError, AttributeError):
+                pass
+            try:
+                from jive.jive_main import jive_main as _jm
+
+                if _jm is not None and hasattr(_jm, "_system"):
+                    return _jm._system
+            except (ImportError, AttributeError):
+                pass
+            return None
 
         def _vol_down_cb() -> int:
             if self.fixedVolumeSet:
-                sys_inst = _System()
+                sys_inst = _get_system_instance()
                 if (
-                    hasattr(sys_inst, "has_ir_blaster_capability")
+                    sys_inst is not None
+                    and hasattr(sys_inst, "has_ir_blaster_capability")
                     and sys_inst.has_ir_blaster_capability()
                 ):
                     if self.player and hasattr(self.player, "volume"):
                         self.player.volume(99, True)
             if Framework and hasattr(Framework, "dispatchEvent"):
-                Framework.dispatchEvent(self.volSlider, Event(EVENT_SCROLL, -3))
+                Framework.dispatchEvent(self.volSlider, Event(EVENT_SCROLL, rel=-3))
             return EVENT_CONSUME
 
         def _vol_up_cb() -> int:
             if self.fixedVolumeSet:
-                sys_inst = _System()
+                sys_inst = _get_system_instance()
                 if (
-                    hasattr(sys_inst, "has_ir_blaster_capability")
+                    sys_inst is not None
+                    and hasattr(sys_inst, "has_ir_blaster_capability")
                     and sys_inst.has_ir_blaster_capability()
                 ):
                     if self.player and hasattr(self.player, "volume"):
                         self.player.volume(101, True)
             if Framework and hasattr(Framework, "dispatchEvent"):
-                Framework.dispatchEvent(self.volSlider, Event(EVENT_SCROLL, 3))
+                Framework.dispatchEvent(self.volSlider, Event(EVENT_SCROLL, rel=3))
             return EVENT_CONSUME
 
         self.controlsGroup = Group(
@@ -2194,7 +2332,7 @@ class NowPlayingApplet(Applet):
         if self.window and hasattr(self.window, "hide"):
             self.window.hide()
 
-    def openScreensaver(self) -> bool:
+    def openScreensaver(self, force: Any = None, method_param: Any = None) -> bool:
         """Open NP as a screensaver (called by ScreenSavers applet)."""
         mgr = _get_applet_manager()
         if mgr:
@@ -2278,24 +2416,24 @@ class NowPlayingApplet(Applet):
         if this_track:
             track_info = self._extract_track_info(this_track)
             if (
-                player_status.get("remote") == 1
-                and isinstance(player_status.get("current_title"), str)
+                player_status.get("remote") == 1  # type: ignore[union-attr]
+                and isinstance(player_status.get("current_title"), str)  # type: ignore[union-attr]
                 and isinstance(track_info, str)
             ):
-                track_info = track_info + "\n" + player_status["current_title"]
+                track_info = track_info + "\n" + player_status["current_title"]  # type: ignore[index]
 
-            self._get_icon(this_track, self.artwork, player_status.get("remote"))
-            self._update_mode(player_status.get("mode", "stop"))
+            self._get_icon(this_track, self.artwork, player_status.get("remote"))  # type: ignore[union-attr]
+            self._update_mode(player_status.get("mode", "stop"))  # type: ignore[union-attr]
             self._update_track(track_info)
-            self._update_progress(player_status)
+            self._update_progress(player_status)  # type: ignore[arg-type]
             self._update_playlist()
 
-            if len(player_status.get("item_loop", [])) > 1:
+            if len(player_status.get("item_loop", [])) > 1:  # type: ignore[union-attr]
                 Icon = _Icon()
                 self._get_icon(
-                    player_status["item_loop"][1],
+                    player_status["item_loop"][1],  # type: ignore[index]
                     Icon("artwork"),
-                    player_status.get("remote"),
+                    player_status.get("remote"),  # type: ignore[union-attr]
                 )
         else:
             self._get_icon(None, self.artwork, None)
@@ -2360,7 +2498,6 @@ class NowPlayingApplet(Applet):
         log.debug("free(): player=%s", self.player)
         if self.window and hasattr(self.window, "hide"):
             self.window.hide()
-        self.window = None
         # Returning True allows the applet to actually be freed;
         # returning False keeps it resident.  NowPlaying is normally
         # kept resident.
@@ -2374,9 +2511,9 @@ class NowPlayingApplet(Applet):
         if not self.player:
             return None
         if hasattr(self.player, "get_id"):
-            return self.player.get_id()
+            return self.player.get_id()  # type: ignore[no-any-return]
         if hasattr(self.player, "getId"):
-            return self.player.getId()
+            return self.player.getId()  # type: ignore[no-any-return]
         return None
 
     def _player_play_mode(self) -> str:
@@ -2392,45 +2529,45 @@ class NowPlayingApplet(Applet):
         if not self.player:
             return None
         if hasattr(self.player, "get_player_status"):
-            return self.player.get_player_status()
+            return self.player.get_player_status()  # type: ignore[no-any-return]
         if hasattr(self.player, "getPlayerStatus"):
-            return self.player.getPlayerStatus()
+            return self.player.getPlayerStatus()  # type: ignore[no-any-return]
         return None
 
     def _player_playlist_size(self) -> Optional[int]:
         if not self.player:
             return None
         if hasattr(self.player, "get_playlist_size"):
-            return self.player.get_playlist_size()
+            return self.player.get_playlist_size()  # type: ignore[no-any-return]
         if hasattr(self.player, "getPlaylistSize"):
-            return self.player.getPlaylistSize()
+            return self.player.getPlaylistSize()  # type: ignore[no-any-return]
         return None
 
     def _player_playlist_current_index(self) -> Optional[int]:
         if not self.player:
             return None
         if hasattr(self.player, "get_playlist_current_index"):
-            return self.player.get_playlist_current_index()
+            return self.player.get_playlist_current_index()  # type: ignore[no-any-return]
         if hasattr(self.player, "getPlaylistCurrentIndex"):
-            return self.player.getPlaylistCurrentIndex()
+            return self.player.getPlaylistCurrentIndex()  # type: ignore[no-any-return]
         return None
 
     def _player_track_elapsed(self) -> Tuple[Optional[float], Optional[float]]:
         if not self.player:
             return (None, None)
         if hasattr(self.player, "get_track_elapsed"):
-            return self.player.get_track_elapsed()
+            return self.player.get_track_elapsed()  # type: ignore[no-any-return]
         if hasattr(self.player, "getTrackElapsed"):
-            return self.player.getTrackElapsed()
+            return self.player.getTrackElapsed()  # type: ignore[no-any-return]
         return (None, None)
 
     def _player_volume(self) -> Optional[int]:
         if not self.player:
             return None
         if hasattr(self.player, "get_volume"):
-            return self.player.get_volume()
+            return self.player.get_volume()  # type: ignore[no-any-return]
         if hasattr(self.player, "getVolume"):
-            return self.player.getVolume()
+            return self.player.getVolume()  # type: ignore[no-any-return]
         return None
 
     def _player_server(self) -> Any:
@@ -2446,18 +2583,18 @@ class NowPlayingApplet(Applet):
         if not self.player:
             return False
         if hasattr(self.player, "is_local"):
-            return self.player.is_local()
+            return self.player.is_local()  # type: ignore[no-any-return]
         if hasattr(self.player, "isLocal"):
-            return self.player.isLocal()
+            return self.player.isLocal()  # type: ignore[no-any-return]
         return False
 
     def _player_is_remote(self) -> bool:
         if not self.player:
             return False
         if hasattr(self.player, "is_remote"):
-            return self.player.is_remote()
+            return self.player.is_remote()  # type: ignore[no-any-return]
         if hasattr(self.player, "isRemote"):
-            return self.player.isRemote()
+            return self.player.isRemote()  # type: ignore[no-any-return]
         return False
 
     def _is_this_player(self, player: Any) -> bool:
@@ -2493,9 +2630,10 @@ class NowPlayingApplet(Applet):
     def _get_jnt() -> Any:
         """Obtain the network-thread coordinator singleton."""
         try:
-            from jive.slim.player import jnt
+            from jive.jive_main import jive_main as _jm
 
-            return jnt
-        except (ImportError, AttributeError):
-            pass
+            if _jm is not None:
+                return getattr(_jm, "jnt", None)
+        except ImportError as exc:
+            log.debug("_get_jnt: jive_main not available: %s", exc)
         return None

@@ -89,8 +89,8 @@ def _get_jive_main() -> Any:
         from jive.jive_main import jive_main
 
         return jive_main
-    except (ImportError, AttributeError):
-        pass
+    except (ImportError, AttributeError) as exc:
+        log.debug("_get_jive_main: jive_main not available: %s", exc)
     try:
         import jive.jive_main as _mod
 
@@ -101,9 +101,9 @@ def _get_jive_main() -> Any:
 
 def _get_framework() -> Any:
     try:
-        from jive.ui.framework import Framework
+        from jive.ui.framework import framework
 
-        return Framework
+        return framework
     except ImportError:
         return None
 
@@ -111,11 +111,12 @@ def _get_framework() -> Any:
 def _get_jnt() -> Any:
     """Obtain the network-thread coordinator singleton."""
     try:
-        from jive.slim.player import jnt
+        from jive.jive_main import jive_main as _jm
 
-        return jnt
-    except (ImportError, AttributeError):
-        pass
+        if _jm is not None:
+            return getattr(_jm, "jnt", None)
+    except ImportError as exc:
+        log.debug("_get_jnt: jive_main not available: %s", exc)
     return None
 
 
@@ -222,7 +223,7 @@ class SelectPlayerApplet(Applet):
 
         # Try to get a wireless interface
         try:
-            from jive.net.networking import Networking  # type: ignore[import-untyped]
+            from jive.net.networking import Networking  # type: ignore[import-not-found]
 
             jnt = _get_jnt()
             if jnt is not None:
@@ -248,11 +249,11 @@ class SelectPlayerApplet(Applet):
         self.manage_select_player_menu()
 
         if self.playerMenu:
-            item = self.playerItem.get(mac)
+            item = self.playerItem.get(mac)  # type: ignore[arg-type]
             if item is not None:
                 if hasattr(self.playerMenu, "removeItem"):
                     self.playerMenu.removeItem(item)
-                del self.playerItem[mac]
+                del self.playerItem[mac]  # type: ignore[arg-type]
 
             server = self._get_player_server(player)
             if server is not None:
@@ -291,7 +292,7 @@ class SelectPlayerApplet(Applet):
 
         self.manage_select_player_menu()
 
-    def notify_serverDisconnected(self, server: Any) -> None:
+    def notify_serverDisconnected(self, server: Any, num_user_requests: int) -> None:
         """Handle server-disconnected notification."""
         if not self.playerMenu:
             return
@@ -344,14 +345,20 @@ class SelectPlayerApplet(Applet):
                 weight = 103
 
                 try:
-                    from jive.system import System
+                    from jive.applet_manager import applet_manager as _mgr
 
-                    sys_inst = System()
-                    if sys_inst.has_audio_by_default():
-                        node = "settings"
-                        weight = 50
-                except (ImportError, AttributeError):
-                    pass
+                    if (
+                        _mgr is not None
+                        and hasattr(_mgr, "system")
+                        and _mgr.system is not None
+                    ):
+                        if _mgr.system.has_audio_by_default():
+                            node = "settings"
+                            weight = 50
+                except (ImportError, AttributeError) as exc:
+                    log.debug(
+                        "System import fallback in manage_select_player_menu: %s", exc
+                    )
 
                 menu_item: Dict[str, Any] = {
                     "id": "selectPlayer",
@@ -403,15 +410,15 @@ class SelectPlayerApplet(Applet):
 
         # Don't show players needing network setup on audio-default devices
         try:
-            from jive.system import System
+            from jive.applet_manager import applet_manager as _mgr
 
-            sys_inst = System()
-            if sys_inst.has_audio_by_default():
-                config = getattr(player, "config", None)
-                if config == "needsNetwork":
-                    return
-        except (ImportError, AttributeError):
-            pass
+            if _mgr is not None and hasattr(_mgr, "system") and _mgr.system is not None:
+                if _mgr.system.has_audio_by_default():
+                    config = getattr(player, "config", None)
+                    if config == "needsNetwork":
+                        return
+        except (ImportError, AttributeError) as exc:
+            log.debug("System import fallback in _add_player_item: %s", exc)
 
         # Determine player model and icon style
         player_model = None
@@ -441,7 +448,7 @@ class SelectPlayerApplet(Applet):
             player_weight = LOCAL_PLAYER_WEIGHT
 
         # Build the menu item
-        def _make_callback(p: Any) -> Callable:
+        def _make_callback(p: Any) -> Callable[..., Any]:
             def _cb(event: Any = None, mi: Any = None) -> None:
                 log.info("select player item: %s", p)
                 if self.select_player(p):
@@ -451,7 +458,7 @@ class SelectPlayerApplet(Applet):
 
             return _cb
 
-        def _make_focus_gained(player_mac: str) -> Callable:
+        def _make_focus_gained(player_mac: str) -> Callable[..., Any]:
             def _fg(event: Any = None) -> int:
                 self._show_wallpaper(player_mac)
                 return EVENT_UNUSED
@@ -529,11 +536,14 @@ class SelectPlayerApplet(Applet):
             return
 
         # Check if the server is password-protected
+        # is_password_protected() returns (bool, realm) tuple — use first element
         is_pw_protected = False
         if hasattr(server, "is_password_protected"):
-            is_pw_protected = server.is_password_protected()
+            result = server.is_password_protected()
+            is_pw_protected = result[0] if isinstance(result, tuple) else bool(result)
         elif hasattr(server, "isPasswordProtected"):
-            is_pw_protected = server.isPasswordProtected()
+            result = server.isPasswordProtected()
+            is_pw_protected = result[0] if isinstance(result, tuple) else bool(result)
 
         if not is_pw_protected:
             if server_name in self.serverItem:
@@ -542,7 +552,7 @@ class SelectPlayerApplet(Applet):
                 del self.serverItem[server_name]
             return
 
-        def _make_server_callback(srv: Any) -> Callable:
+        def _make_server_callback(srv: Any) -> Callable[..., Any]:
             def _cb(event: Any = None, mi: Any = None) -> None:
                 mgr = _get_applet_manager()
                 if mgr:
@@ -688,7 +698,7 @@ class SelectPlayerApplet(Applet):
         if hasattr(window, "addListener"):
             window.addListener(
                 EVENT_WINDOW_ACTIVE,
-                lambda event=None: (self._scan(), EVENT_UNUSED)[-1],
+                lambda event=None: (self._scan(), EVENT_UNUSED)[-1],  # type: ignore[func-returns-value]
             )
 
         self.tie_and_show_window(window)
@@ -864,9 +874,9 @@ class SelectPlayerApplet(Applet):
         if player is None:
             return None
         if hasattr(player, "get_id"):
-            return player.get_id()
+            return player.get_id()  # type: ignore[no-any-return]
         if hasattr(player, "getId"):
-            return player.getId()
+            return player.getId()  # type: ignore[no-any-return]
         return None
 
     @staticmethod
@@ -875,9 +885,9 @@ class SelectPlayerApplet(Applet):
         if player is None:
             return None
         if hasattr(player, "get_name"):
-            return player.get_name()
+            return player.get_name()  # type: ignore[no-any-return]
         if hasattr(player, "getName"):
-            return player.getName()
+            return player.getName()  # type: ignore[no-any-return]
         return None
 
     @staticmethod
@@ -897,7 +907,7 @@ class SelectPlayerApplet(Applet):
         if player is None:
             return False
         if hasattr(player, "needs_music_source"):
-            return player.needs_music_source()
+            return player.needs_music_source()  # type: ignore[no-any-return]
         if hasattr(player, "needsMusicSource"):
-            return player.needsMusicSource()
+            return player.needsMusicSource()  # type: ignore[no-any-return]
         return False

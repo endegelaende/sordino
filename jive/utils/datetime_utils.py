@@ -418,7 +418,7 @@ def get_timezone(
         True
     """
     tz = timezone if timezone is not None else self_or_tz
-    return TIMEZONES.get(tz)  # type: ignore[arg-type]
+    return TIMEZONES.get(tz)
 
 
 def get_all_timezones(self: Any = None) -> Dict[str, Dict[str, Any]]:
@@ -463,7 +463,7 @@ def set_timezone(self_or_tz: Any = None, timezone: Optional[str] = None) -> bool
         log.error("Set Invalid TimeZone")
         return False
     else:
-        _timezone = tz  # type: ignore[assignment]
+        _timezone = tz
         return True
 
 

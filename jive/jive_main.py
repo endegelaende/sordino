@@ -50,6 +50,7 @@ from typing import (
     Any,
     Callable,
     Dict,
+    Iterator,
     List,
     Optional,
     Set,
@@ -191,15 +192,28 @@ class JiveMain:
         system.init_user_path_dirs()
 
         # --- Locale ---
+        # Use the module-level singleton so that ALL applets (including
+        # SetupLanguageMeta/Applet which call get_locale_instance())
+        # share the same Locale object — and therefore the same
+        # ``_loaded_files`` weak-dict.  Without this, set_locale()
+        # called on the singleton would not reload the StringsTable
+        # objects that were registered by the AppletManager through a
+        # different Locale instance.
         if locale is None:
-            from jive.utils.locale import Locale
+            from jive.utils.locale import get_locale_instance
 
-            locale = Locale()
+            locale = get_locale_instance()
+        else:
+            # Caller provided an explicit instance — install it as the
+            # module-level singleton so that get_locale_instance()
+            # returns the same object everywhere.
+            import jive.utils.locale as _locale_mod
+
+            _locale_mod._instance = locale
         self._locale = locale
 
-        # --- Global strings ---
+        # --- Global strings (loaded later, after search paths are set) ---
         self._global_strings: Optional["StringsTable"] = None
-        self._load_global_strings()
 
         # --- Soft power state ---
         self._soft_power_state: str = "on"
@@ -226,10 +240,14 @@ class JiveMain:
         if init_ui:
             self._init_ui_framework()
 
+        # --- Now that search paths are populated, wire find_file into
+        #     the Locale and load global strings ---
+        self._setup_locale_find_file()
+        self._load_global_strings()
+
         # --- Network thread ---
         self.jnt: Any = None
         self._init_network_thread()
-        jnt_instance = self.jnt
 
         # --- AppletManager ---
         from jive.applet_manager import AppletManager
@@ -240,26 +258,33 @@ class JiveMain:
             jnt=self.jnt,
             allowed_applets=allowed_applets,
         )
-        applet_manager_instance = self._applet_manager
+        self.applet_manager = self._applet_manager
 
         # --- Iconbar ---
         from jive.iconbar import Iconbar
 
         self._iconbar = Iconbar(jnt=self.jnt, use_stubs=not init_ui)
-        iconbar_instance = self._iconbar
 
-        # --- Create the home menu and register nodes ---
-        self._init_home_menu()
+        # --- Set module-level singletons so that applets loaded later
+        #     (via configure_applet / reload) can look them up.
+        import jive.jive_main as _self_mod
+
+        _self_mod.jive_main = self
+        _self_mod.applet_manager_instance = self._applet_manager
+        _self_mod.iconbar_instance = self._iconbar
+        _self_mod.jnt_instance = self.jnt
+        JiveMain.instance = self
+
+        # --- Register input-to-action mappings (must come before home menu
+        #     so that action names like "go_home" are registered when
+        #     HomeMenu.__init__ calls window.add_action_listener) ---
+        self._register_input_mappings()
 
         # --- Register default action listeners ---
         self._register_action_listeners()
 
-        # --- Register input-to-action mappings ---
-        self._register_input_mappings()
-
-        # --- Set singleton ---
-        JiveMain.instance = self
-        jive_main = self
+        # --- Create the home menu and register nodes ---
+        self._init_home_menu()
 
         # --- Load applets and skin ---
         if init_ui:
@@ -277,16 +302,46 @@ class JiveMain:
     # Initialization helpers
     # ------------------------------------------------------------------
 
+    def _setup_locale_find_file(self) -> None:
+        """Wire the asset search-path resolver into the Locale.
+
+        This must be called after ``_init_ui_framework`` so that the
+        search paths populated from ``System.search_paths`` are
+        available to ``find_file``.
+        """
+        try:
+            from jive.ui.surface import find_file as _surface_find
+
+            self._locale._find_file = _surface_find
+        except ImportError as exc:
+            log.debug("_init_find_file: surface find_file not available: %s", exc)
+
     def _load_global_strings(self) -> None:
         """Load the global strings file."""
         try:
             self._global_strings = self._locale.read_global_strings_file()
+            if self._global_strings is not None:
+                n = len(self._global_strings._data)
+                log.info("Loaded global strings: %d entries", n)
         except Exception as exc:
             log.warn("Could not load global strings: %s", exc)
             self._global_strings = None
 
     def _init_ui_framework(self) -> None:
         """Initialize the pygame UI framework."""
+        # Populate asset search paths from System so that Font.load()
+        # and Surface.load_image() can resolve relative paths like
+        # "fonts/FreeSans.ttf" or "applets/JogglerSkin/images/...".
+        try:
+            from jive.ui.font import add_font_search_path
+            from jive.ui.surface import add_search_path as add_surface_search_path
+
+            for sp in self._system.search_paths:
+                add_font_search_path(sp)
+                add_surface_search_path(sp)
+        except Exception as exc:
+            log.debug("Could not populate asset search paths: %s", exc)
+
         try:
             from jive.ui.framework import framework
 
@@ -318,8 +373,8 @@ class JiveMain:
         if self._global_strings is not None:
             try:
                 title = self._global_strings.str("HOME")
-            except Exception:
-                pass
+            except Exception as exc:
+                log.debug("Could not resolve HOME string: %s", exc)
 
         try:
             from jive.ui.homemenu import HomeMenu
@@ -352,8 +407,10 @@ class JiveMain:
             if gs is not None:
                 try:
                     return gs.str(token)
-                except Exception:
-                    pass
+                except Exception as exc:
+                    log.error(
+                        "_str: error resolving token %r: %s", token, exc, exc_info=True
+                    )
             return token
 
         hm = self.home_menu
@@ -739,7 +796,7 @@ class JiveMain:
     # Lua-compatible camelCase alias
     registerSkin = register_skin
 
-    def skin_iterator(self):
+    def skin_iterator(self) -> Iterator[Tuple[str, str]]:
         """Iterate over registered skins.
 
         Yields ``(skin_id, display_name)`` tuples.
@@ -800,34 +857,69 @@ class JiveMain:
             log.error("Cannot load skin %s", applet_name)
             return False
 
-        # Reset the style dict
+        # Reset the StyleDB singleton and pass its backing dict directly
+        # to the skin method — exactly like the Lua original:
+        #
+        #   jive.ui.style = {}
+        #   obj[method](obj, jive.ui.style, reload, useDefaultSize)
+        #
+        # The skin method populates the dict *in place*.  Because we
+        # hand over the same dict object that StyleDB uses internally,
+        # style lookups made during skin loading (e.g. from
+        # set_video_mode → checkLayout paths) will find the entries
+        # that have been written so far, rather than hitting an empty
+        # dict.
         try:
-            import jive.ui.style as _style_mod
+            from jive.ui.style import skin as _skin_db
 
-            _style_mod.style = {}
-        except ImportError:
-            pass
+            _skin_db.data = {}  # clears old data + invalidates cache
+        except ImportError as exc:
+            log.debug("_load_skin: style module not available: %s", exc)
 
-        # Call the skin method
+        # Call the skin method — it populates _skin_db.data in place
         skin_method = getattr(obj, method, None)
         if skin_method is None:
             log.error("Skin applet %s has no method %s", applet_name, method)
             return False
 
         try:
-            skin_method(
-                {},  # style dict (will be populated by the skin)
+            # Pass the live StyleDB dict so entries are visible
+            # immediately as the skin method adds them.
+            result = skin_method(
+                _skin_db.data,
                 reload_skin,
                 use_default_size,
             )
+            # Some skin methods return a *new* dict instead of (or in
+            # addition to) populating the one passed in.  If so, install
+            # the returned dict as the new style data.
+            if (
+                result is not None
+                and isinstance(result, dict)
+                and result is not _skin_db.data
+            ):
+                _skin_db.data = result
         except Exception as exc:
             log.error("Error loading skin %s: %s", applet_name, exc)
             return False
+
+        # Invalidate the lookup cache — the skin method may have
+        # overwritten entries that were cached during loading.
+        _skin_db.invalidate()
 
         self._skin = obj
 
         if self._framework is not None:
             self._framework.style_changed()
+
+        # Refresh the wallpaper background for the new skin/resolution.
+        # The old background was rendered for the previous screen size
+        # and must be reloaded so it matches the new dimensions.
+        if applet_manager_instance is not None:
+            try:
+                applet_manager_instance.call_service("setBackground", None)
+            except Exception as exc:
+                log.debug("_load_skin: setBackground refresh failed: %s", exc)
 
         return True
 
@@ -928,13 +1020,13 @@ class JiveMain:
         """
         log.debug("reload()")
 
-        # Reset the style
+        # Reset the StyleDB singleton (clear cache, keep the object)
         try:
-            import jive.ui.style as _style_mod
+            from jive.ui.style import skin as _skin_db
 
-            _style_mod.style = {}
-        except ImportError:
-            pass
+            _skin_db.data = {}
+        except ImportError as exc:
+            log.debug("reload: style module not available: %s", exc)
 
         # Discover and register applets
         if applet_manager_instance is not None:
@@ -988,8 +1080,8 @@ class JiveMain:
         if self._global_strings is not None:
             try:
                 text = self._global_strings.str(label)
-            except Exception:
-                pass
+            except Exception as exc:
+                log.debug("Could not resolve string %r: %s", label, exc)
 
         menu.add_item(
             {
@@ -1063,13 +1155,13 @@ class JiveMain:
     def get_menu_table(self) -> Dict[str, Any]:
         """Return the menu table (delegates to HomeMenu)."""
         if self.home_menu is not None:
-            return self.home_menu.get_menu_table()
+            return self.home_menu.get_menu_table()  # type: ignore[no-any-return]
         return {}
 
     def get_node_table(self) -> Dict[str, Any]:
         """Return the node table (delegates to HomeMenu)."""
         if self.home_menu is not None:
-            return self.home_menu.get_node_table()
+            return self.home_menu.get_node_table()  # type: ignore[no-any-return]
         return {}
 
     def close_to_home(self, transition: bool = True) -> None:
@@ -1150,7 +1242,7 @@ class JiveMain:
 
         def _splash_handler(*_args: Any, **_kwargs: Any) -> int:
             self.perform_post_on_screen_init()
-            self._framework.set_update_screen(True)
+            self._framework.set_update_screen(True)  # type: ignore[union-attr]
             return EVENT_UNUSED
 
         splash_listener = self._framework.add_listener(
@@ -1162,15 +1254,15 @@ class JiveMain:
         try:
             from jive.ui.timer import Timer
 
+            def _splash_timer_cb() -> None:
+                self.perform_post_on_screen_init()
+                self._framework.set_update_screen(True)  # type: ignore[union-attr]
+                if splash_listener:
+                    self._framework.remove_listener(splash_listener)  # type: ignore[union-attr]
+
             splash_timer = Timer(
                 2000,
-                lambda: (
-                    self.perform_post_on_screen_init(),
-                    self._framework.set_update_screen(True),
-                    self._framework.remove_listener(splash_listener)
-                    if splash_listener
-                    else None,
-                ),
+                _splash_timer_cb,
                 once=True,
             )
             splash_timer.start()
@@ -1179,10 +1271,17 @@ class JiveMain:
             self._framework.set_update_screen(True)
 
         # Run the event loop
-        task = None
+        from jive.ui.task import Task
+
         if self.jnt is not None and hasattr(self.jnt, "task"):
-            task = self.jnt.task()
-        self._framework.event_loop(task)
+            net_task = self.jnt.task()
+            net_task.add_task()
+
+        def _pump_tasks() -> None:
+            for t in Task.iterator():
+                t.resume()
+
+        self._framework.event_loop(_pump_tasks)
         self._framework.quit()
 
     # ------------------------------------------------------------------

@@ -330,7 +330,7 @@ class Font:
             )
             return surface
         except Exception as exc:
-            log.error(f"render returned error: {exc}")
+            log.error("render returned error: %s", exc)
             return None
 
     def render_to(
@@ -360,7 +360,7 @@ class Font:
             )
             return rect
         except Exception as exc:
-            log.error(f"render_to returned error: {exc}")
+            log.error("render_to returned error: %s", exc)
             return None
 
     # ------------------------------------------------------------------
