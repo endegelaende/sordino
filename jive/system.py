@@ -421,23 +421,20 @@ class System:
         # Common locations for applets / share data
         candidates = [
             pkg_dir,  # sordino/jive — contains applets/ directly
-            pkg_dir / "data",  # bundled assets (copied by release workflow)
+            pkg_dir / "_data",  # wheel builds: share/jive/ copied here by CI
             project_root / "share" / "jive",
             project_root / "share",
             project_root,
-            # Original jivelite layout
+            # Original jivelite layout (installed via system packages)
             pkg_dir.parent.parent / "share" / "jive",
-            # Sibling jivelite repo (fonts, images, assets)
-            project_root.parent / "jivelite" / "share" / "jive",
         ]
 
         # PyInstaller: add _MEIPASS-relative paths so frozen builds
-        # find bundled applets, data, and share assets.
+        # find bundled applets and share assets.
         if meipass.is_dir():
             candidates += [
                 meipass / "jive",  # applets/ live here
-                meipass / "jive" / "data",  # bundled skin assets
-                meipass / "share" / "jive",  # share/jive fonts & splash
+                meipass / "share" / "jive",  # share/jive fonts, images & splash
                 meipass,
             ]
 

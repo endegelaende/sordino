@@ -61,9 +61,8 @@ code is fully permitted — the font's GPL does not extend to the rest of the pr
 
 Skin images (JogglerSkin, HDSkin, HDGridSkin, QVGAbaseSkin, etc.) originate from
 the upstream JiveLite repository and are covered by the same BSD-3-Clause license
-as the rest of the JiveLite project. These images are not bundled in the Sordino
-git repository — they are copied from the sibling JiveLite checkout into `jive/data/`
-at build time by the release workflow (`.github/workflows/release.yml`).
+as the rest of the JiveLite project. These images are bundled directly in the
+Sordino repository under `share/jive/applets/`.
 
 ### Wallpaper Images
 

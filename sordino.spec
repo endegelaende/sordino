@@ -5,16 +5,15 @@
 # Usage:
 #   python -m PyInstaller sordino.spec
 #
-# Before running, ensure assets are bundled into jive/data/:
-#   See README.md § "Asset Bundling" for details.
-#
 # The frozen build includes:
 #   - The full jive package (core, ui, net, slim, utils)
 #   - All 33 applets as data files (loaded dynamically via importlib)
-#   - Bundled skin assets from jive/data/ (fonts, images, strings)
-#   - Local assets from share/jive/ (fonts, splash, global strings)
+#   - Assets from share/jive/ (skin images, fonts, splash, strings)
 #   - Applet localisation strings (*/strings.txt)
 #   - Wallpaper images
+#
+# All assets are committed directly in the repository under share/jive/.
+# No external checkout or bundling step is required.
 # ──────────────────────────────────────────────────────────────────────────────
 
 from __future__ import annotations
@@ -32,7 +31,6 @@ block_cipher = None
 SPEC_DIR = Path(SPECPATH)  # noqa: F821 — SPECPATH is injected by PyInstaller
 JIVE_DIR = SPEC_DIR / "jive"
 APPLETS_DIR = JIVE_DIR / "applets"
-DATA_DIR = JIVE_DIR / "data"
 SHARE_DIR = SPEC_DIR / "share" / "jive"
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -64,16 +62,7 @@ if APPLETS_DIR.is_dir():
                     continue
                 datas.append((str(root_path / f), str(rel)))
 
-# 2. Bundled skin assets (jive/data/) — fonts, images, strings
-if DATA_DIR.is_dir():
-    for root, _dirs, files in os.walk(DATA_DIR):
-        _dirs[:] = [d for d in _dirs if d != "__pycache__"]
-        root_path = Path(root)
-        rel = root_path.relative_to(SPEC_DIR)
-        for f in files:
-            datas.append((str(root_path / f), str(rel)))
-
-# 3. Local share/jive/ assets (fonts, splash, global_strings.txt)
+# 2. share/jive/ assets (skin images, fonts, splash, strings)
 if SHARE_DIR.is_dir():
     for root, _dirs, files in os.walk(SHARE_DIR):
         _dirs[:] = [d for d in _dirs if d != "__pycache__"]
@@ -82,7 +71,7 @@ if SHARE_DIR.is_dir():
         for f in files:
             datas.append((str(root_path / f), str(rel)))
 
-# 4. Wallpaper images
+# 3. Wallpaper images
 wallpaper_dir = APPLETS_DIR / "SetupWallpaper" / "wallpaper"
 # (Already covered by the applets walk above, but listed for clarity.)
 

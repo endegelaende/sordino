@@ -233,11 +233,12 @@ python -m mypy jive/ --strict          # Type-Check
 
 ### Assets
 
-Fonts und Skin-Images werden über Search-Paths geladen:
-1. `sordino/jive/` (enthält `applets/` direkt)
-2. `sordino/share/jive/` (Fonts, globale Strings)
-3. `../jivelite/share/jive/` (Sibling-Repo für Original-Assets)
+Fonts, Skin-Images und Applet-Bilder sind direkt im Repo unter `share/jive/`
+gebundelt (gleiche BSD-3-Clause-Lizenz wie JiveLite). Kein separater Clone nötig.
 
+Search-Paths (in `jive/system.py`):
+1. `sordino/jive/` (enthält `applets/` direkt)
+2. `sordino/share/jive/` (Fonts, Skin-Images, Splash, globale Strings)
 ---
 
 ## 6. Bekannte Eigenheiten

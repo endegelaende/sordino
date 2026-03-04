@@ -72,27 +72,23 @@ include = ["jive*"]
 # Assets that live inside the jive package tree and MUST be included in
 # wheels / sdists so that `pip install sordino` works out of the box.
 jive = [
-    # Wallpaper images (bundled in sordino itself)
+    # Wallpaper images
     "applets/SetupWallpaper/wallpaper/*.png",
     # Applet localisation strings
     "applets/*/strings.txt",
-    # Skin images — only present after the release workflow (or a manual
-    # copy) places jivelite assets into jive/data/.
-    # When absent the globs simply match nothing (no build error).
-    "data/fonts/*.ttf",
-    "data/jive/*.png",
-    "data/jive/*.txt",
-    "data/applets/*/images/**/*.png",
-    "data/applets/*/images/**/*.jpg",
-    "data/applets/*/images/**/*.bmp",
-    "data/applets/NowPlaying/images/*.png",
-    "data/applets/Clock/images/**/*.png",
+    # Bundled share/jive/ assets — the release workflow copies
+    # share/jive/ → jive/_data/ before `python -m build` so that
+    # skin images, fonts, splash, and strings end up inside the wheel.
+    # For editable installs the search-path in system.py finds
+    # share/jive/ relative to the project root directly.
+    # When _data/ is absent these globs simply match nothing.
+    "_data/fonts/*.ttf",
+    "_data/jive/*.png",
+    "_data/jive/*.txt",
+    "_data/applets/*/images/**/*.png",
+    "_data/applets/*/images/**/*.jpg",
+    "_data/applets/*/images/**/*.bmp",
 ]
-
-# share/ is NOT included via package-data (it is outside the jive
-# package).  For development, the search-path system in jive/system.py
-# finds share/jive/ relative to the project root.  For distribution,
-# the release workflow copies the needed files into jive/data/.
 
 # ──────────────────────────────────────────────────────────────────────────────
 # pytest

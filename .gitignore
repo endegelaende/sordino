@@ -16,9 +16,6 @@ dist-frozen/
 sdist/
 wheels/
 
-# Bundled assets (copied from jivelite by release workflow)
-jive/data/
-
 # PyInstaller (but keep sordino.spec — it's tracked)
 # *.spec
 
@@ -94,3 +91,7 @@ lern.md
 # Reports & screenshots directories (runtime-generated)
 reports/
 screenshots/
+
+# Auto-generated asset bundle for wheel builds (created by release workflow)
+# See .github/workflows/release.yml — copies share/jive/ → jive/_data/
+jive/_data/

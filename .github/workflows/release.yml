@@ -7,9 +7,6 @@
 # Prerequisites:
 #   1. Configure PyPI Trusted Publisher for this repo:
 #      https://docs.pypi.org/trusted-publishers/adding-a-publisher/
-#   2. The jivelite repo assets must be bundled before building wheels.
-#      The workflow handles this automatically by checking out jivelite
-#      as a sibling and copying assets into jive/data/ inline.
 # ──────────────────────────────────────────────────────────────────────────────
 
 name: Release
@@ -44,24 +41,15 @@ concurrency:
 
 jobs:
   # ────────────────────────────────────────────────────────────────────────────
-  # 1. Build sdist + wheel (with bundled assets)
+  # 1. Build sdist + wheel
   # ────────────────────────────────────────────────────────────────────────────
   build-package:
     name: Build sdist & wheel
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout sordino
+      - name: Checkout
         uses: actions/checkout@v4
-        with:
-          path: sordino
-
-      - name: Checkout jivelite (for skin assets)
-        uses: actions/checkout@v4
-        with:
-          repository: ralph-irving/jivelite
-          path: jivelite
-          sparse-checkout: share/jive
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -71,41 +59,31 @@ jobs:
       - name: Install build tools
         run: python -m pip install --upgrade pip build setuptools wheel
 
-      - name: Bundle assets from jivelite
-        working-directory: sordino
+      - name: Bundle assets into jive/_data/ for wheel
         run: |
-          set -euo pipefail
-          SRC="../jivelite/share/jive"
-          DEST="jive/data"
-          mkdir -p "$DEST"
-
-          echo "── Copying jivelite assets (fonts, jive, applets) ──"
-          cp -r "$SRC/fonts"   "$DEST/fonts"
-          cp -r "$SRC/jive"    "$DEST/jive"
-          cp -r "$SRC/applets" "$DEST/applets"
-
-          echo "── Merging local share/jive assets ──"
-          cp share/jive/fonts/*.ttf       "$DEST/fonts/" 2>/dev/null || true
-          cp share/jive/jive/*.png        "$DEST/jive/"  2>/dev/null || true
-          cp share/jive/jive/*.txt        "$DEST/jive/"  2>/dev/null || true
-
-          echo "── Asset bundle summary ──"
-          find "$DEST" -type f | wc -l
-          du -sh "$DEST/"
+          # Copy share/jive/ assets into the jive package tree so that
+          # setuptools includes them as package-data in the wheel.
+          # This is a local copy — no external checkout needed.
+          # The _data/ directory is .gitignored and only exists during CI builds.
+          mkdir -p jive/_data
+          cp -r share/jive/fonts   jive/_data/fonts
+          cp -r share/jive/jive    jive/_data/jive
+          cp -r share/jive/applets jive/_data/applets
+          echo "── Bundled asset summary ──"
+          find jive/_data -type f | wc -l
+          du -sh jive/_data
 
       - name: Build sdist and wheel
-        working-directory: sordino
         run: python -m build
 
       - name: List dist contents
-        working-directory: sordino
         run: ls -lh dist/
 
       - name: Upload package artifacts
         uses: actions/upload-artifact@v4
         with:
           name: dist-package
-          path: sordino/dist/*
+          path: dist/*
           retention-days: 30
 
   # ────────────────────────────────────────────────────────────────────────────
@@ -132,17 +110,8 @@ jobs:
             archive_ext: tar.gz
 
     steps:
-      - name: Checkout sordino
+      - name: Checkout
         uses: actions/checkout@v4
-        with:
-          path: sordino
-
-      - name: Checkout jivelite (for skin assets)
-        uses: actions/checkout@v4
-        with:
-          repository: ralph-irving/jivelite
-          path: jivelite
-          sparse-checkout: share/jive
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -158,36 +127,14 @@ jobs:
             libsdl2-dev libsdl2-image-dev libsdl2-mixer-dev libsdl2-ttf-dev
 
       - name: Install dependencies
-        working-directory: sordino
         run: |
           python -m pip install --upgrade pip setuptools wheel
           python -m pip install -e ".[freeze]"
 
-      - name: Bundle assets from jivelite
-        working-directory: sordino
-        shell: bash
-        run: |
-          set -euo pipefail
-          SRC="../jivelite/share/jive"
-          DEST="jive/data"
-          mkdir -p "$DEST"
-
-          echo "── Copying jivelite assets (fonts, jive, applets) ──"
-          cp -r "$SRC/fonts"   "$DEST/fonts"
-          cp -r "$SRC/jive"    "$DEST/jive"
-          cp -r "$SRC/applets" "$DEST/applets"
-
-          echo "── Merging local share/jive assets ──"
-          cp share/jive/fonts/*.ttf       "$DEST/fonts/" 2>/dev/null || true
-          cp share/jive/jive/*.png        "$DEST/jive/"  2>/dev/null || true
-          cp share/jive/jive/*.txt        "$DEST/jive/"  2>/dev/null || true
-
-          echo "── Asset bundle summary ──"
-          find "$DEST" -type f | wc -l
-          du -sh "$DEST/"
+      # No asset bundling needed for frozen builds — sordino.spec
+      # walks share/jive/ directly from the checkout.
 
       - name: Freeze with PyInstaller
-        working-directory: sordino
         shell: bash
         run: |
           set -euo pipefail
@@ -203,14 +150,12 @@ jobs:
 
       - name: Create archive (Windows)
         if: runner.os == 'Windows'
-        working-directory: sordino
         shell: pwsh
         run: |
           Compress-Archive -Path dist-frozen/sordino/* -DestinationPath dist-frozen/${{ matrix.artifact_name }}.zip
 
       - name: Create archive (Unix)
         if: runner.os != 'Windows'
-        working-directory: sordino
         run: |
           cd dist-frozen
           tar czf ${{ matrix.artifact_name }}.tar.gz sordino/
@@ -219,7 +164,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.artifact_name }}
-          path: sordino/dist-frozen/*.${{ matrix.archive_ext }}
+          path: dist-frozen/*.${{ matrix.archive_ext }}
           retention-days: 30
 
   # ────────────────────────────────────────────────────────────────────────────
@@ -247,8 +192,6 @@ jobs:
 
       - name: Publish to PyPI
         uses: pypa/gh-action-pypi-publish@release/v1
-        with:
-          print-hash: true
 
   # ────────────────────────────────────────────────────────────────────────────
   # 3b. Publish to Test PyPI (manual trigger only)
@@ -277,7 +220,6 @@ jobs:
         uses: pypa/gh-action-pypi-publish@release/v1
         with:
           repository-url: https://test.pypi.org/legacy/
-          print-hash: true
 
   # ────────────────────────────────────────────────────────────────────────────
   # 4. Create GitHub Release with frozen executables
@@ -350,10 +292,10 @@ jobs:
           prerelease: ${{ contains(github.ref_name, '-rc') || contains(github.ref_name, '-beta') || contains(github.ref_name, '-alpha') }}
           files: |
             release-artifacts/dist-package/*
-            release-artifacts/sordino-windows-x64/*.zip
-            release-artifacts/sordino-linux-x64/*.tar.gz
-            release-artifacts/sordino-macos-x64/*.tar.gz
-            release-artifacts/sordino-macos-arm64/*.tar.gz
+            release-artifacts/sordino-windows-x64/*
+            release-artifacts/sordino-linux-x64/*
+            release-artifacts/sordino-macos-x64/*
+            release-artifacts/sordino-macos-arm64/*
           fail_on_unmatched_files: false
 
   # ────────────────────────────────────────────────────────────────────────────

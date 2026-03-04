@@ -62,12 +62,7 @@ git clone https://github.com/endegelaende/sordino.git
 cd sordino
 python3 -m venv .venv
 source .venv/bin/activate
-pip install pygame-ce>=2.5.0
 pip install -e .
-
-# Clone JiveLite for skin images and fonts
-cd .. && git clone https://github.com/ralph-irving/jivelite.git && cd sordino
-
 sordino
 ```
 
@@ -78,14 +73,12 @@ git clone https://github.com/endegelaende/sordino.git
 cd sordino
 python -m venv .venv
 .venv\Scripts\activate
-pip install pygame-ce>=2.5.0
 pip install -e .
-
-# Clone JiveLite for skin images and fonts
-cd .. ; git clone https://github.com/ralph-irving/jivelite.git ; cd sordino
-
 sordino
 ```
+
+All assets (skin images, fonts, splash screens) are included in the repository —
+no additional downloads required.
 
 Sordino discovers Lyrion / Resonance servers on the local network automatically
 via UDP broadcast on port 3483. If discovery doesn't find your server, it will
@@ -223,16 +216,8 @@ cd sordino
 pip install -e ".[dev]"
 ```
 
-For development, you also need the **JiveLite** repository as a sibling directory
-for skin images and fonts:
-
-```bash
-cd ..
-git clone https://github.com/ralph-irving/jivelite.git
-```
-
-Sordino's search-path system automatically finds assets in `../jivelite/share/jive/`
-relative to the project root.
+All assets (skin images, fonts, strings) are bundled directly in the repository
+under `share/jive/`. No additional cloning or asset setup is required.
 
 ### Python Dependencies
 
@@ -259,6 +244,10 @@ Dev:
 
 Sordino supports three distribution methods, mirroring the original JiveLite approach
 (a portable folder with `jivelite.exe` + DLLs) while adding modern Python packaging.
+
+All assets (skin images, fonts, strings — ~3,000 files, ~27 MB) are committed
+directly in the repository under `share/jive/`. No separate asset bundling step
+is required for any distribution method.
 
 ### 1. PyPI — `pip install sordino`
 
@@ -287,12 +276,7 @@ Original JiveLite:              Sordino:
 ```
 
 ```bash
-# Prerequisites
 pip install -e ".[freeze]"
-
-# Bundle skin assets into jive/data/ (see "Asset Bundling" below)
-
-# Build with the spec file
 python -m PyInstaller sordino.spec --noconfirm --clean
 
 # Result: dist/sordino/ contains everything needed to run
@@ -308,31 +292,6 @@ The `sordino.spec` file handles all data collection automatically — applet
 Pre-built portable executables for Windows, Linux, and macOS are published
 as GitHub Release assets on every version tag. Download, extract, and run — no
 installation needed.
-
-### Asset Bundling
-
-Skin images (~3,000 files, ~27 MB) come from the upstream JiveLite repository
-and are not stored in the Sordino git repo. For distribution builds (wheels and
-frozen executables), they must be copied into `jive/data/` first:
-
-```bash
-# Requires ../jivelite/ as a sibling directory
-mkdir -p jive/data
-cp -r ../jivelite/share/jive/fonts   jive/data/fonts
-cp -r ../jivelite/share/jive/jive    jive/data/jive
-cp -r ../jivelite/share/jive/applets jive/data/applets
-
-# Merge local share/jive assets (overrides)
-cp share/jive/fonts/*.ttf  jive/data/fonts/ 2>/dev/null || true
-cp share/jive/jive/*.png   jive/data/jive/  2>/dev/null || true
-cp share/jive/jive/*.txt   jive/data/jive/  2>/dev/null || true
-
-# Remove bundled assets
-# rm -rf jive/data/
-```
-
-The `jive/data/` directory is included in wheels via `pyproject.toml` package-data
-globs. The release workflow (`release.yml`) performs this bundling automatically.
 
 ---
 
@@ -497,11 +456,7 @@ Sordino is a hobby project and contributions are welcome!
 git clone https://github.com/endegelaende/sordino.git
 cd sordino
 python -m venv .venv && .venv/bin/activate    # or .venv\Scripts\activate on Windows
-pip install pygame-ce>=2.5.0
 pip install -e ".[dev]"
-
-# Clone the upstream reference repo (for fonts, images, and Lua sources)
-cd .. && git clone https://github.com/ralph-irving/jivelite.git
 ```
 
 ---
@@ -546,5 +501,5 @@ Community input is what makes this project better.
 ---
 
 <p align="center">
-  <strong>Resonance</strong> erzeugt den Klang. <strong>Sordino</strong> formt die Darstellung.
+  <strong>Resonance</strong> creates the sound. <strong>Sordino</strong> shapes how you experience it.
 </p>

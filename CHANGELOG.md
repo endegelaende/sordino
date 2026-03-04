@@ -58,10 +58,10 @@ Logitech Media Server / Squeezebox).
 
 #### Distribution
 - PyPI package (`pip install sordino`) with `sordino` CLI entrypoint.
-- Asset bundling — copies JiveLite skin images and fonts into `jive/data/`
-  for wheel/sdist distribution (inlined in release workflow).
+- All JiveLite skin images, fonts, and assets bundled directly in the repo
+  under `share/jive/` (same BSD-3-Clause license) — no external checkout needed.
 - Frozen executable builds via PyInstaller (Windows, Linux, macOS) matching
-  the original JiveLite distribution model (inlined in release workflow).
+  the original JiveLite distribution model.
 - GitHub Actions release workflow with Trusted Publisher (PyPI) and frozen
   executable builds.
 

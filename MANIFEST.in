@@ -20,8 +20,8 @@ recursive-include jive/applets/SetupWallpaper/wallpaper *.png
 # Applet localisation strings
 recursive-include jive/applets */strings.txt
 
-# Bundled assets (if present after release workflow asset bundling)
-recursive-include jive/data *.ttf *.png *.jpg *.bmp *.txt
+# Skin images bundled in share/jive/applets/
+recursive-include share/jive/applets *.png *.jpg *.bmp
 
 # CI
 include .github/workflows/ci.yml
