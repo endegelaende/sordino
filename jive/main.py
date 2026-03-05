@@ -42,7 +42,7 @@ def main(argv: Optional[Sequence[str]] = None) -> None:
         try:
             import ctypes
 
-            ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("sordino.jive.app")  # type: ignore[union-attr]
+            ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("sordino.jive.app")
         except Exception:
             pass
 

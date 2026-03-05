@@ -460,6 +460,7 @@ class Menu(Widget):
         self._lock_cancel = cancel if callable(cancel) else None
         try:
             from jive.ui.framework import framework as fw
+
             self._lock_time = fw.get_ticks() if fw is not None else None
         except (ImportError, AttributeError):
             self._lock_time = None
@@ -480,7 +481,7 @@ class Menu(Widget):
 
     def is_locked(self) -> bool:
         """Return ``True`` if the menu is currently locked."""
-        return self._locked
+        return bool(self._locked)
 
     isLocked = is_locked
 
@@ -626,9 +627,7 @@ class Menu(Widget):
             temp_offset *= self.items_per_line
             if temp_list_size % self.items_per_line != 0:
                 temp_list_size = (
-                    temp_list_size
-                    - (temp_list_size % self.items_per_line)
-                    + self.items_per_line
+                    temp_list_size - (temp_list_size % self.items_per_line) + self.items_per_line
                 )
 
         max_val = temp_list_size * self.item_height
@@ -682,18 +681,14 @@ class Menu(Widget):
 
             if item_shift > 0 and self.current_shift_direction <= 0:
                 if self.selected is not None and self.num_widgets > 0:
-                    self.set_selected_index(
-                        self.top_item + self.num_widgets - 2, no_scroll=True
-                    )
+                    self.set_selected_index(self.top_item + self.num_widgets - 2, no_scroll=True)
                 self.current_shift_direction = 1
             elif item_shift < 0 and self.current_shift_direction >= 0:
                 if self.selected is not None:
                     self.set_selected_index(self.top_item + 1, no_scroll=True)
                 self.current_shift_direction = -1
 
-            if (self.is_at_top() and item_shift < 0) or (
-                self.is_at_bottom() and item_shift > 0
-            ):
+            if (self.is_at_top() and item_shift < 0) or (self.is_at_bottom() and item_shift > 0):
                 self.reset_drag_data()
                 self._update_scrollbar()
             else:
@@ -1039,8 +1034,7 @@ class Menu(Widget):
             if keycode in (int(KEY_LEFT), int(KEY_RIGHT)):
                 ipl = self.items_per_line or 1
                 if ipl == 1 or (
-                    keycode == int(KEY_LEFT)
-                    and (self.selected is None or self.selected == 1)
+                    keycode == int(KEY_LEFT) and (self.selected is None or self.selected == 1)
                 ):
                     from jive.ui.framework import framework as fw
 
@@ -1091,6 +1085,7 @@ class Menu(Widget):
                     scrollbar_inside = self.scrollbar.mouse_inside(event)
                 if not scrollbar_inside:
                     from jive.ui.framework import framework as fw
+
                     if fw is not None:
                         fw.push_action("add")
             return int(EVENT_CONSUME)
@@ -1117,6 +1112,7 @@ class Menu(Widget):
             if self._locked and self._lock_time is not None:
                 try:
                     from jive.ui.framework import framework as fw
+
                     now = fw.get_ticks() if fw is not None else 0
                     if now > self._lock_time + 1500:  # GO_AS_CANCEL_TIME
                         if self._lock_cancel is not None:
@@ -1253,9 +1249,7 @@ class Menu(Widget):
         self._update_widgets()
 
         # Determine if scrollbar is needed
-        self._has_scrollbar = (
-            not self.hide_scrollbar and self.list_size > self.num_widgets
-        )
+        self._has_scrollbar = not self.hide_scrollbar and self.list_size > self.num_widgets
 
         log.debug(
             "Menu._layout: style=%s bounds=(%d,%d,%d,%d) "
@@ -1332,9 +1326,7 @@ class Menu(Widget):
         y = by + pt
         num_in_line = 0
 
-        item_w = (
-            (bw - pl - pr - sw) // self.items_per_line if self.items_per_line > 0 else 0
-        )
+        item_w = (bw - pl - pr - sw) // self.items_per_line if self.items_per_line > 0 else 0
 
         for widget in self.widgets:
             if hasattr(widget, "set_bounds"):
@@ -1415,15 +1407,13 @@ class Menu(Widget):
 
         # Draw header widget
         if self.header_widget is not None and hasattr(self.header_widget, "draw"):
-            self.header_widget.draw(surface, layer)  # type: ignore[call-arg]
+            self.header_widget.draw(surface, layer)
 
     # ------------------------------------------------------------------
     # Iterate (jiveL_menu_iterate)
     # ------------------------------------------------------------------
 
-    def iterate(
-        self, closure: Callable[..., Any], include_hidden: bool = False
-    ) -> None:
+    def iterate(self, closure: Callable[..., Any], include_hidden: bool = False) -> None:
         """Iterate over child widgets (items, scrollbar, header)."""
         for widget in self.widgets:
             closure(widget)

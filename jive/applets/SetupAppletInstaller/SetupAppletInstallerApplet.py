@@ -148,9 +148,7 @@ class SetupAppletInstallerApplet(Applet):
             if user_dir:
                 self.appletdir = os.path.join(str(user_dir), "applets")
         else:
-            self.appletdir = os.path.join(
-                os.path.expanduser("~"), ".jivelite", "applets"
-            )
+            self.appletdir = os.path.join(os.path.expanduser("~"), ".jivelite", "applets")
 
         log.info("User Applets Path: %s", self.appletdir)
 
@@ -221,9 +219,7 @@ class SetupAppletInstallerApplet(Applet):
         if system is not None:
             machine = system.get_machine()
 
-        def _response_callback(
-            chunk: Any = None, err: Any = None, **kwargs: Any
-        ) -> None:
+        def _response_callback(chunk: Any = None, err: Any = None, **kwargs: Any) -> None:
             if err:
                 log.debug("Server query error: %s", err)
             elif chunk is not None:
@@ -352,13 +348,9 @@ class SetupAppletInstallerApplet(Applet):
 
             if Textarea is not None:
                 try:
-                    self.menu.set_header_widget(
-                        Textarea("help_text", self.string("APPLET_WARN"))
-                    )
+                    self.menu.set_header_widget(Textarea("help_text", self.string("APPLET_WARN")))
                 except Exception as exc:
-                    log.warning(
-                        "_build_menu: failed to set warning header widget: %s", exc
-                    )
+                    log.warning("_build_menu: failed to set warning header widget: %s", exc)
 
         self.toremove = {}
         self.todownload = {}
@@ -443,9 +435,7 @@ class SetupAppletInstallerApplet(Applet):
                 try:
                     self.popup.hide()
                 except Exception as exc:
-                    log.warning(
-                        "_build_menu: failed to hide popup in auto mode: %s", exc
-                    )
+                    log.warning("_build_menu: failed to hide popup in auto mode: %s", exc)
             return
 
         # Show the window
@@ -591,9 +581,7 @@ class SetupAppletInstallerApplet(Applet):
             try:
                 menu.set_header_widget(Textarea("help_text", desc))
             except Exception as exc:
-                log.warning(
-                    "_repo_entry: failed to set description header widget: %s", exc
-                )
+                log.warning("_repo_entry: failed to set description header widget: %s", exc)
 
         name = entry.get("name", "")
         url = entry.get("url", "")
@@ -946,13 +934,9 @@ class SetupAppletInstallerApplet(Applet):
 
             if Textarea is not None:
                 try:
-                    self.window.add_widget(
-                        Textarea("help_text", self.string("RESTART_APP"))
-                    )
+                    self.window.add_widget(Textarea("help_text", self.string("RESTART_APP")))
                 except Exception as exc:
-                    log.warning(
-                        "_finished: failed to add restart message widget: %s", exc
-                    )
+                    log.warning("_finished: failed to add restart message widget: %s", exc)
 
             # Add a listener to hide the window on any key press
             try:
@@ -1003,16 +987,12 @@ class SetupAppletInstallerApplet(Applet):
             try:
                 return server.getIpPort()  # type: ignore[no-any-return]
             except Exception as exc:
-                log.error(
-                    "_get_server_ip_port: getIpPort() failed: %s", exc, exc_info=True
-                )
+                log.error("_get_server_ip_port: getIpPort() failed: %s", exc, exc_info=True)
         if hasattr(server, "get_ip_port"):
             try:
                 return server.get_ip_port()  # type: ignore[no-any-return]
             except Exception as exc:
-                log.error(
-                    "_get_server_ip_port: get_ip_port() failed: %s", exc, exc_info=True
-                )
+                log.error("_get_server_ip_port: get_ip_port() failed: %s", exc, exc_info=True)
         if hasattr(server, "ip") and hasattr(server, "port"):
             return (str(server.ip), int(server.port))
         return ("", 0)
@@ -1029,9 +1009,7 @@ class SetupAppletInstallerApplet(Applet):
 
             return str(JIVE_VERSION)
         except (ImportError, AttributeError) as exc:
-            log.debug(
-                "_get_jive_version_string: JIVE_VERSION not in ui.constants: %s", exc
-            )
+            log.debug("_get_jive_version_string: JIVE_VERSION not in ui.constants: %s", exc)
         try:
             import jive
 
@@ -1062,19 +1040,13 @@ class SetupAppletInstallerApplet(Applet):
 
             return SimpleMenu
         except ImportError as exc:
-            log.debug(
-                "_get_simple_menu_class: jive.ui.simplemenu not available: %s", exc
-            )
+            log.debug("_get_simple_menu_class: jive.ui.simplemenu not available: %s", exc)
         try:
-            from jive.ui.simple_menu import (
-                SimpleMenu,  # type: ignore[import-not-found, no-redef]
-            )
+            from jive.ui.simple_menu import SimpleMenu as _SM  # type: ignore[import-not-found]
 
-            return SimpleMenu
+            return _SM
         except ImportError as exc:
-            log.debug(
-                "_get_simple_menu_class: jive.ui.simple_menu not available: %s", exc
-            )
+            log.debug("_get_simple_menu_class: jive.ui.simple_menu not available: %s", exc)
             return None
 
     @staticmethod

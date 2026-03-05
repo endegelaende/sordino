@@ -372,7 +372,7 @@ class JiveMain:
         title = "HOME"
         if self._global_strings is not None:
             try:
-                title = self._global_strings.str("HOME")
+                title = str(self._global_strings.str("HOME"))
             except Exception as exc:
                 log.debug("Could not resolve HOME string: %s", exc)
 
@@ -408,9 +408,7 @@ class JiveMain:
                 try:
                     return gs.str(token)
                 except Exception as exc:
-                    log.error(
-                        "_str: error resolving token %r: %s", token, exc, exc_info=True
-                    )
+                    log.error("_str: error resolving token %r: %s", token, exc, exc_info=True)
             return token
 
         hm = self.home_menu
@@ -563,9 +561,7 @@ class JiveMain:
         fw.add_action_listener("go_home", self._go_home_action, priority=10)
 
         # go_home_or_now_playing — before NowPlaying exists, just go home
-        fw.add_action_listener(
-            "go_home_or_now_playing", self._go_home_action, priority=10
-        )
+        fw.add_action_listener("go_home_or_now_playing", self._go_home_action, priority=10)
 
         # add — default context menu action
         fw.add_action_listener("add", self._default_context_menu_action, priority=10)
@@ -686,9 +682,7 @@ class JiveMain:
     # Lua-compatible camelCase alias
     getSoftPowerState = get_soft_power_state
 
-    def set_soft_power_state(
-        self, soft_power_state: str, is_server_request: bool = False
-    ) -> None:
+    def set_soft_power_state(self, soft_power_state: str, is_server_request: bool = False) -> None:
         """Set the soft power state.
 
         Parameters
@@ -893,11 +887,7 @@ class JiveMain:
             # Some skin methods return a *new* dict instead of (or in
             # addition to) populating the one passed in.  If so, install
             # the returned dict as the new style data.
-            if (
-                result is not None
-                and isinstance(result, dict)
-                and result is not _skin_db.data
-            ):
+            if result is not None and isinstance(result, dict) and result is not _skin_db.data:
                 _skin_db.data = result
         except Exception as exc:
             log.error("Error loading skin %s: %s", applet_name, exc)
@@ -1070,16 +1060,14 @@ class JiveMain:
         if not icon_style:
             icon_style = "_BOGUS_"
 
-        if self._framework is not None and self._framework.is_most_recent_input(
-            "mouse"
-        ):
+        if self._framework is not None and self._framework.is_most_recent_input("mouse"):
             return  # Touch/mouse — use help button instead
 
         label = text_token or "GLOBAL_HELP"
         text = label
         if self._global_strings is not None:
             try:
-                text = self._global_strings.str(label)
+                text = str(self._global_strings.str(label))
             except Exception as exc:
                 log.debug("Could not resolve string %r: %s", label, exc)
 

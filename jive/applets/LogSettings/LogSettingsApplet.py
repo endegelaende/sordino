@@ -309,16 +309,14 @@ class LogSettingsApplet(Applet):
         str or None
             The path to ``logconf.json`` in the user directory.
         """
-        user_dir = None
+        user_dir: str | None = None
         try:
             from jive.applet_manager import applet_manager as _mgr
 
             if _mgr is not None and hasattr(_mgr, "system") and _mgr.system is not None:
-                user_dir = _mgr.system.get_user_dir()
+                user_dir = str(_mgr.system.get_user_dir())
         except Exception as exc:
-            log.error(
-                "Failed to get user directory from System: %s", exc, exc_info=True
-            )
+            log.error("Failed to get user directory from System: %s", exc, exc_info=True)
 
         if not user_dir:
             user_dir = os.path.expanduser("~/.jivelite")

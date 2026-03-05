@@ -75,7 +75,7 @@ class CustomizeHomeMenuApplet(Applet):
         )
 
         help_text = Textarea("help_text", self.string("CUSTOMIZE_HOME_HELP"))
-        menu.setHeaderWidget(help_text)  # type: ignore[attr-defined]
+        menu.setHeaderWidget(help_text)
 
         window = Window("text_list", self.string("CUSTOMIZE_HOME"))
         window.add_widget(menu)
@@ -93,9 +93,7 @@ class CustomizeHomeMenuApplet(Applet):
         except ImportError:
             return
 
-        help_text = Textarea(
-            "help_text", self.string("CUSTOMIZE_HOME_MORE_HELP")
-        )
+        help_text = Textarea("help_text", self.string("CUSTOMIZE_HOME_MORE_HELP"))
         window = Window("information", self.string("CUSTOMIZE_HOME"))
         window.add_widget(help_text)
         window.show()
@@ -153,9 +151,7 @@ class CustomizeHomeMenuApplet(Applet):
             hm_id = "hm_" + item.get("id", "")
             custom_home_item = jive_main.get_node_item_by_id(hm_id, "home")
             if custom_home_item is None:
-                custom_home_item = jive_main.get_node_item_by_id(
-                    hm_id, "hidden"
-                )
+                custom_home_item = jive_main.get_node_item_by_id(hm_id, "hidden")
                 if custom_home_item is not None:
                     hidden_custom_home_item = True
 
@@ -183,13 +179,9 @@ class CustomizeHomeMenuApplet(Applet):
                 _ti: Dict[str, Any] = the_item,
             ) -> int:
                 if _ti.get("node") == "home":
-                    self._timed_exec(
-                        lambda: self._do_set_node_hidden(_ti)
-                    )
+                    self._timed_exec(lambda: self._do_set_node_hidden(_ti))
                 else:
-                    self._timed_exec(
-                        lambda: self._do_remove_from_node(_ti)
-                    )
+                    self._timed_exec(lambda: self._do_remove_from_node(_ti))
                 window.hide()
                 return int(EVENT_CONSUME)
 
@@ -212,11 +204,7 @@ class CustomizeHomeMenuApplet(Applet):
                 window.hide()
                 self._store_settings("home")
 
-                self._timed_exec(
-                    lambda: self._go_home_and_select(
-                        _ti.get("id", "")
-                    )
-                )
+                self._timed_exec(lambda: self._go_home_and_select(_ti.get("id", "")))
                 return int(EVENT_CONSUME)
 
             menu.addItem(
@@ -334,9 +322,7 @@ class CustomizeHomeMenuApplet(Applet):
                 def _restore_callback(_it: Dict[str, Any] = _item) -> int:
                     if mgr is not None:
                         mgr.call_service("goHome")
-                    self._timed_exec(
-                        lambda: self._do_restore_item(_it), 500
-                    )
+                    self._timed_exec(lambda: self._do_restore_item(_it), 500)
                     return int(EVENT_CONSUME)
 
                 menu.addItem(
@@ -347,17 +333,11 @@ class CustomizeHomeMenuApplet(Applet):
                     }
                 )
 
-        help_text = Textarea(
-            "help_text", self.string("RESTORE_HIDDEN_ITEMS_HELP")
-        )
+        help_text = Textarea("help_text", self.string("RESTORE_HIDDEN_ITEMS_HELP"))
 
         if not at_least_one:
-            window = Window(
-                "text_list", self.string("RESTORE_HIDDEN_ITEMS")
-            )
-            help_text = Textarea(
-                "help_text", self.string("NO_HIDDEN_ITEMS")
-            )
+            window = Window("text_list", self.string("RESTORE_HIDDEN_ITEMS"))
+            help_text = Textarea("help_text", self.string("NO_HIDDEN_ITEMS"))
             menu.addItem(
                 {
                     "text": self.string("CUSTOMIZE_CANCEL"),
@@ -368,7 +348,7 @@ class CustomizeHomeMenuApplet(Applet):
                 }
             )
 
-        menu.setHeaderWidget(help_text)  # type: ignore[attr-defined]
+        menu.setHeaderWidget(help_text)
         window.add_widget(menu)
         window.show()
 
@@ -424,7 +404,7 @@ class CustomizeHomeMenuApplet(Applet):
             ],
         )
 
-        menu.setHeaderWidget(  # type: ignore[attr-defined]
+        menu.setHeaderWidget(
             Textarea(
                 "help_text",
                 self.string("CUSTOMIZE_RESTORE_DEFAULTS_HELP"),
@@ -567,9 +547,7 @@ class CustomizeHomeMenuApplet(Applet):
         )
         return int(EVENT_CONSUME)
 
-    def _timed_exec(
-        self, func: Callable[[], Any], delay: int = 350
-    ) -> None:
+    def _timed_exec(self, func: Callable[[], Any], delay: int = 350) -> None:
         """Execute a function after a short delay for visual effect."""
         try:
             from jive.ui.timer import Timer
@@ -620,11 +598,13 @@ class CustomizeHomeMenuApplet(Applet):
     def _get_jive_main() -> Any:
         try:
             from jive.jive_main import jive_main
+
             return jive_main
         except (ImportError, AttributeError) as exc:
             log.debug("_get_jive_main: jive_main not available: %s", exc)
         try:
             import jive.jive_main as _mod
+
             return getattr(_mod, "jive_main", None)
         except ImportError:
             return None
@@ -633,6 +613,7 @@ class CustomizeHomeMenuApplet(Applet):
     def _get_applet_manager() -> Any:
         try:
             from jive.applet_manager import applet_manager
+
             return applet_manager
         except (ImportError, AttributeError):
             return None

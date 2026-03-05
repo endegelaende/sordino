@@ -263,7 +263,7 @@ class DesktopJiveMeta(AppletMeta):
             if _mgr is not None and hasattr(_mgr, "system"):
                 sys_inst = _mgr.system
                 if sys_inst is not None:
-                    return sys_inst.get_mac_address()  # type: ignore[no-any-return]
+                    return sys_inst.get_mac_address()
         except Exception as exc:
             log.debug("_get_system_mac: failed via applet_manager: %s", exc)
 
@@ -272,7 +272,7 @@ class DesktopJiveMeta(AppletMeta):
             from jive.jive_main import jive_main as _jm
 
             if _jm is not None and hasattr(_jm, "_system"):
-                return _jm._system.get_mac_address()  # type: ignore[no-any-return]
+                return _jm._system.get_mac_address()
         except Exception as exc:
             log.debug("_get_system_mac: failed via jive_main: %s", exc)
 

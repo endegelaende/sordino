@@ -251,9 +251,7 @@ class Group(Widget):
                 should_forward = False
                 if self._mouse_event_focus_widget is widget:
                     should_forward = True
-                elif self._mouse_event_focus_widget is None and widget.mouse_inside(
-                    event
-                ):
+                elif self._mouse_event_focus_widget is None and widget.mouse_inside(event):
                     should_forward = True
 
                 if should_forward:
@@ -301,9 +299,7 @@ class Group(Widget):
     # Iteration
     # ------------------------------------------------------------------
 
-    def iterate(
-        self, closure: Callable[[Widget], None], include_hidden: bool = False
-    ) -> None:
+    def iterate(self, closure: Callable[[Widget], None], include_hidden: bool = False) -> None:
         """
         Call *closure(child)* for each child widget, in order.
 
@@ -319,9 +315,7 @@ class Group(Widget):
             Defaults to ``False`` (skip hidden widgets), matching the
             C ``jiveL_group_iterate`` behaviour.
         """
-        widget_list = (
-            self._widgets if self._widgets is not None else list(self.widgets.values())
-        )
+        widget_list = self._widgets if self._widgets is not None else list(self.widgets.values())
 
         for widget in widget_list:
             if widget is None:
@@ -591,7 +585,7 @@ class Group(Widget):
         def _draw_child(widget: Widget) -> None:
             # Only draw if we are the widget's parent (Bug 9362 fix)
             if widget.parent is self and hasattr(widget, "draw"):
-                widget.draw(surface, layer)  # type: ignore[call-arg]
+                widget.draw(surface, layer)
 
         self.iterate(_draw_child)
 

@@ -72,9 +72,7 @@ def _setup_debug_logger() -> None:
     # Also add a stderr handler for ERROR+ so critical issues are visible
     stderr_handler = logging.StreamHandler()
     stderr_handler.setLevel(logging.ERROR)
-    stderr_handler.setFormatter(
-        logging.Formatter("DEBUG_BRIDGE %(levelname)s: %(message)s")
-    )
+    stderr_handler.setFormatter(logging.Formatter("DEBUG_BRIDGE %(levelname)s: %(message)s"))
     _debug_log.addHandler(stderr_handler)
 
 
@@ -100,9 +98,7 @@ def _patched_notify(original_notify: Any) -> Any:
             sub_name = type(obj).__name__
 
             if method is None:
-                _debug_log.debug(
-                    "NOTIFY_MISS: %s has no %s handler", sub_name, method_name
-                )
+                _debug_log.debug("NOTIFY_MISS: %s has no %s handler", sub_name, method_name)
                 subscribers_missing += 1
                 continue
 
@@ -123,7 +119,7 @@ def _patched_notify(original_notify: Any) -> Any:
 
                 try:
                     sig = inspect.signature(method)
-                    expected_params = len(
+                    expected_params: int | str = len(
                         [
                             p
                             for p in sig.parameters.values()
@@ -228,8 +224,7 @@ def audit_subscriptions() -> None:
             notify_methods = [
                 m
                 for m in dir(applet_instance)
-                if m.startswith("notify_")
-                and callable(getattr(applet_instance, m, None))
+                if m.startswith("notify_") and callable(getattr(applet_instance, m, None))
             ]
 
             if not notify_methods:
@@ -253,9 +248,7 @@ def audit_subscriptions() -> None:
                     len(notify_methods),
                 )
     except Exception as exc:
-        _debug_log.error(
-            "AUDIT_ERROR: subscription audit failed: %s", exc, exc_info=True
-        )
+        _debug_log.error("AUDIT_ERROR: subscription audit failed: %s", exc, exc_info=True)
 
 
 # ---------------------------------------------------------------------------
@@ -267,9 +260,7 @@ def _install_excepthook() -> Any:
     """Install a global exception hook that logs to debug.log."""
     _original_hook = sys.excepthook
 
-    def _debug_excepthook(
-        exc_type: type, exc_value: BaseException, exc_tb: Any
-    ) -> None:
+    def _debug_excepthook(exc_type: type, exc_value: BaseException, exc_tb: Any) -> None:
         if exc_type is KeyboardInterrupt:
             _original_hook(exc_type, exc_value, exc_tb)
             return
@@ -304,8 +295,7 @@ def _patch_style_functions() -> Dict[str, Any]:
         if val is not None and val is not default:
             if not hasattr(val, "blit"):
                 _debug_log.warning(
-                    "STYLE_TYPE: style_tile(%s, %r) returned %s "
-                    "(expected Tile with .blit)",
+                    "STYLE_TYPE: style_tile(%s, %r) returned %s (expected Tile with .blit)",
                     type(widget).__name__,
                     key,
                     type(val).__name__,
@@ -318,8 +308,7 @@ def _patch_style_functions() -> Dict[str, Any]:
         if val is not None and val is not default:
             if not hasattr(val, "get_size"):
                 _debug_log.warning(
-                    "STYLE_TYPE: style_image(%s, %r) returned %s "
-                    "(expected Surface with .get_size)",
+                    "STYLE_TYPE: style_image(%s, %r) returned %s (expected Surface with .get_size)",
                     type(widget).__name__,
                     key,
                     type(val).__name__,
@@ -424,8 +413,8 @@ def _patch_settings_functions() -> Dict[str, Any]:
             )
             raise
 
-    AppletManager._store_settings = _audited_store  # type: ignore[assignment]
-    AppletManager._load_settings = _audited_load  # type: ignore[assignment]
+    AppletManager._store_settings = _audited_store  # type: ignore[method-assign]
+    AppletManager._load_settings = _audited_load  # type: ignore[method-assign]
 
     return {
         "_store_settings": _orig_store,
@@ -460,14 +449,13 @@ def _patch_update_screen() -> Any:
             if _slow_frame_count <= 10 or _slow_frame_count % 100 == 0:
                 avg = sum(_frame_times) / len(_frame_times)
                 _debug_log.warning(
-                    "PERF_SLOW_FRAME: %.1f ms (avg: %.1f ms, "
-                    "slow frames: %d, target: <=33ms)",
+                    "PERF_SLOW_FRAME: %.1f ms (avg: %.1f ms, slow frames: %d, target: <=33ms)",
                     elapsed_ms,
                     avg,
                     _slow_frame_count,
                 )
 
-    Framework.update_screen = _timed_update_screen  # type: ignore[assignment]
+    Framework.update_screen = _timed_update_screen  # type: ignore[method-assign]
     return _orig
 
 
@@ -502,7 +490,7 @@ def install() -> None:
         from jive.net.network_thread import NetworkThread
 
         _originals["notify"] = NetworkThread.notify
-        NetworkThread.notify = _patched_notify(NetworkThread.notify)  # type: ignore[assignment]
+        NetworkThread.notify = _patched_notify(NetworkThread.notify)  # type: ignore[method-assign]
         _debug_log.info("Patched: NetworkThread.notify()")
     except ImportError:
         _debug_log.warning("Could not patch NetworkThread.notify — module not loaded")
@@ -528,9 +516,7 @@ def install() -> None:
         _originals["update_screen"] = _patch_update_screen()
         _debug_log.info("Patched: Framework.update_screen()")
     except ImportError:
-        _debug_log.warning(
-            "Could not patch Framework.update_screen — module not loaded"
-        )
+        _debug_log.warning("Could not patch Framework.update_screen — module not loaded")
 
     # 6. Subscription audit (deferred — run after applets are loaded)
     try:
@@ -555,7 +541,7 @@ def uninstall() -> None:
         try:
             from jive.net.network_thread import NetworkThread
 
-            NetworkThread.notify = _originals["notify"]  # type: ignore[assignment]
+            NetworkThread.notify = _originals["notify"]  # type: ignore[method-assign]
         except ImportError:
             _debug_log.debug("NetworkThread not available for restore")
 
@@ -568,7 +554,7 @@ def uninstall() -> None:
         try:
             from jive.ui.framework import Framework
 
-            Framework.update_screen = _originals["update_screen"]  # type: ignore[assignment]
+            Framework.update_screen = _originals["update_screen"]  # type: ignore[method-assign]
         except ImportError:
             _debug_log.debug("Framework not available for restore")
 
@@ -588,8 +574,8 @@ def uninstall() -> None:
         try:
             from jive.applet_manager import AppletManager
 
-            AppletManager._store_settings = _originals["_store_settings"]  # type: ignore[assignment]
-            AppletManager._load_settings = _originals["_load_settings"]  # type: ignore[assignment]
+            AppletManager._store_settings = _originals["_store_settings"]  # type: ignore[method-assign]
+            AppletManager._load_settings = _originals["_load_settings"]  # type: ignore[method-assign]
         except ImportError:
             _debug_log.debug("AppletManager not available for restore")
 

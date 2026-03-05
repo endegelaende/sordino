@@ -285,7 +285,9 @@ class ChooseMusicSourceApplet(Applet):
             try:
                 mgr.call_service("goHome")
             except Exception as exc:
-                log.error("_default_callback: failed to call goHome service: %s", exc, exc_info=True)
+                log.error(
+                    "_default_callback: failed to call goHome service: %s", exc, exc_info=True
+                )
 
     # ------------------------------------------------------------------
     # Server list UI
@@ -308,14 +310,20 @@ class ChooseMusicSourceApplet(Applet):
             try:
                 jnt.subscribe(self)
             except Exception as exc:
-                log.error("_show_music_source_list: failed to subscribe to jnt: %s", exc, exc_info=True)
+                log.error(
+                    "_show_music_source_list: failed to subscribe to jnt: %s", exc, exc_info=True
+                )
 
         # ── Trigger server discovery ─────────────────────────────────
         if mgr is not None:
             try:
                 mgr.call_service("discoverServers")
             except Exception as exc:
-                log.error("_show_music_source_list: failed to call discoverServers: %s", exc, exc_info=True)
+                log.error(
+                    "_show_music_source_list: failed to call discoverServers: %s",
+                    exc,
+                    exc_info=True,
+                )
 
         # ── Polled servers (from settings) ───────────────────────────
         poll: Dict[str, str] = {}
@@ -323,7 +331,9 @@ class ChooseMusicSourceApplet(Applet):
             try:
                 poll = mgr.call_service("getPollList") or {}
             except Exception as exc:
-                log.error("_show_music_source_list: failed to get poll list: %s", exc, exc_info=True)
+                log.error(
+                    "_show_music_source_list: failed to get poll list: %s", exc, exc_info=True
+                )
 
         log.debug("Polled Servers:")
         for address in poll:
@@ -339,7 +349,11 @@ class ChooseMusicSourceApplet(Applet):
                     log.debug("\t%s", server)
                     self._add_server_item(server, address)
             except Exception as exc:
-                log.error("_show_music_source_list: failed to iterate squeeze centers: %s", exc, exc_info=True)
+                log.error(
+                    "_show_music_source_list: failed to iterate squeeze centers: %s",
+                    exc,
+                    exc_info=True,
+                )
 
         # ── Auto-select if only one server ───────────────────────────
         if not offer_list_if_only_one:
@@ -436,9 +450,7 @@ class ChooseMusicSourceApplet(Applet):
     # Server item management
     # ------------------------------------------------------------------
 
-    def _add_server_item(
-        self, server: Any = None, address: Optional[str] = None
-    ) -> None:
+    def _add_server_item(self, server: Any = None, address: Optional[str] = None) -> None:
         """
         Add a server entry to the server list / menu.
 
@@ -456,11 +468,7 @@ class ChooseMusicSourceApplet(Applet):
                 return
 
         # Filter: SqueezeNetwork
-        if (
-            server is not None
-            and not self.offer_sn
-            and hasattr(server, "is_squeeze_network")
-        ):
+        if server is not None and not self.offer_sn and hasattr(server, "is_squeeze_network"):
             try:
                 if server.is_squeeze_network():
                     log.debug("Exclude SN")
@@ -475,7 +483,9 @@ class ChooseMusicSourceApplet(Applet):
                     log.info("Exclude non-compatible source: %s", server)
                     return
             except Exception as exc:
-                log.warning("_add_server_item: failed to check is_compatible for %s: %s", server, exc)
+                log.warning(
+                    "_add_server_item: failed to check is_compatible for %s: %s", server, exc
+                )
 
         # Determine ID
         item_id: str
@@ -508,7 +518,9 @@ class ChooseMusicSourceApplet(Applet):
                 try:
                     self.server_menu.remove_item(self.server_list[item_id])
                 except Exception as exc:
-                    log.warning("_add_server_item: failed to remove existing menu item %s: %s", item_id, exc)
+                    log.warning(
+                        "_add_server_item: failed to remove existing menu item %s: %s", item_id, exc
+                    )
 
         if server is not None:
             # Also remove by server's ip:port if different
@@ -523,11 +535,13 @@ class ChooseMusicSourceApplet(Applet):
                 if server_ip_port and server_ip_port in self.server_list:
                     if self.server_menu is not None:
                         try:
-                            self.server_menu.remove_item(
-                                self.server_list[server_ip_port]
-                            )
+                            self.server_menu.remove_item(self.server_list[server_ip_port])
                         except Exception as exc:
-                            log.warning("_add_server_item: failed to remove duplicate menu item by ip:port %s: %s", server_ip_port, exc)
+                            log.warning(
+                                "_add_server_item: failed to remove duplicate menu item by ip:port %s: %s",
+                                server_ip_port,
+                                exc,
+                            )
             except (AttributeError, TypeError) as exc:
                 log.warning("_add_server_item: failed to get server ip:port for dedup: %s", exc)
 
@@ -562,14 +576,16 @@ class ChooseMusicSourceApplet(Applet):
                     if player_server is server:
                         item["style"] = "item_checked"
                 except Exception as exc:
-                    log.warning("_add_server_item: failed to check current player server for %s: %s", item_id, exc)
+                    log.warning(
+                        "_add_server_item: failed to check current player server for %s: %s",
+                        item_id,
+                        exc,
+                    )
 
     # Lua alias
     _addServerItem = _add_server_item
 
-    def _del_server_item(
-        self, server: Any = None, address: Optional[str] = None
-    ) -> None:
+    def _del_server_item(self, server: Any = None, address: Optional[str] = None) -> None:
         """Remove a server entry from the list/menu."""
         item_id = server or address
         if item_id is None:
@@ -595,7 +611,9 @@ class ChooseMusicSourceApplet(Applet):
                 try:
                     self.server_menu.remove_item(self.server_list[sid])
                 except Exception as exc:
-                    log.warning("_del_server_item: failed to remove item %s from menu: %s", sid, exc)
+                    log.warning(
+                        "_del_server_item: failed to remove item %s from menu: %s", sid, exc
+                    )
             del self.server_list[sid]
 
         # Re-add if server is on poll list
@@ -605,14 +623,16 @@ class ChooseMusicSourceApplet(Applet):
                 try:
                     poll = mgr.call_service("getPollList") or {}
                     server_address = (
-                        server.get_ip_port()
-                        if hasattr(server, "get_ip_port")
-                        else str(server)
+                        server.get_ip_port() if hasattr(server, "get_ip_port") else str(server)
                     )
                     if server_address in poll:
                         self._add_server_item(None, server_address)
                 except Exception as exc:
-                    log.error("_del_server_item: failed to re-add server from poll list: %s", exc, exc_info=True)
+                    log.error(
+                        "_del_server_item: failed to re-add server from poll list: %s",
+                        exc,
+                        exc_info=True,
+                    )
 
     # Lua alias
     _delServerItem = _del_server_item
@@ -641,7 +661,9 @@ class ChooseMusicSourceApplet(Applet):
                 try:
                     server.updateInit({"ip": address}, 9000)  # type: ignore[attr-defined]
                 except (AttributeError, TypeError) as exc:
-                    log.debug("_create_remote_server: server lacks updateInit for %s: %s", address, exc)
+                    log.debug(
+                        "_create_remote_server: server lacks updateInit for %s: %s", address, exc
+                    )
             return server
         except ImportError:
             log.debug("SlimServer not importable, returning stub")
@@ -689,9 +711,17 @@ class ChooseMusicSourceApplet(Applet):
                             )
                             return
                         except Exception as exc:
-                            log.error("selectServer: failed to call squeezeCenterPassword service: %s", exc, exc_info=True)
+                            log.error(
+                                "selectServer: failed to call squeezeCenterPassword service: %s",
+                                exc,
+                                exc_info=True,
+                            )
             except Exception as exc:
-                log.error("selectServer: failed to check password protection for server: %s", exc, exc_info=True)
+                log.error(
+                    "selectServer: failed to check password protection for server: %s",
+                    exc,
+                    exc_info=True,
+                )
 
         # Check version compatibility
         version = self._get_server_version(server)
@@ -740,11 +770,7 @@ class ChooseMusicSourceApplet(Applet):
                 else False
             )
 
-            if (
-                player_server is server
-                and player_connected
-                and not self.ignore_server_connected
-            ):
+            if player_server is server and player_connected and not self.ignore_server_connected:
                 if self.player_connected_callback:
                     callback = self.player_connected_callback
                     self.player_connected_callback = None
@@ -754,9 +780,7 @@ class ChooseMusicSourceApplet(Applet):
             log.warning("selectServer: failed to check if already connected to server: %s", exc)
 
         # Confirmation dialog if switching while playing
-        if self.confirm_on_change and not self._should_skip_confirm(
-            current_player, server
-        ):
+        if self.confirm_on_change and not self._should_skip_confirm(current_player, server):
             self._confirm_server_switch(current_player, server, server_for_retry)
         else:
             self.connectPlayerToServer(current_player, server)
@@ -892,7 +916,9 @@ class ChooseMusicSourceApplet(Applet):
                     try:
                         mgr.call_service("discoverServers")
                     except Exception as exc:
-                        log.error("_on_timeout: failed to call discoverServers: %s", exc, exc_info=True)
+                        log.error(
+                            "_on_timeout: failed to call discoverServers: %s", exc, exc_info=True
+                        )
 
                 timeout_counter["count"] += 1
                 has_failed = False
@@ -925,10 +951,18 @@ class ChooseMusicSourceApplet(Applet):
                     self.connecting_popup = None
 
             # Disable most input during connection
-            popup.ignore_all_input_except([
-                "back", "go_home", "go_home_or_now_playing",
-                "volume_up", "volume_down", "stop", "pause", "power",
-            ])
+            popup.ignore_all_input_except(
+                [
+                    "back",
+                    "go_home",
+                    "go_home_or_now_playing",
+                    "volume_up",
+                    "volume_down",
+                    "stop",
+                    "pause",
+                    "power",
+                ]
+            )
             popup.add_action_listener("back", self, _cancel_action)
             popup.add_action_listener("go_home", self, _cancel_action)
             popup.add_action_listener("go_home_or_now_playing", self, _cancel_action)
@@ -991,7 +1025,9 @@ class ChooseMusicSourceApplet(Applet):
                             self._cancel_select_server(no_hide=True)
                             return
                     except Exception as exc:
-                        log.warning("hideConnectingToServer: failed to check upgrade_force: %s", exc)
+                        log.warning(
+                            "hideConnectingToServer: failed to check upgrade_force: %s", exc
+                        )
 
                     if self.player_connected_callback:
                         callback = self.player_connected_callback
@@ -1020,9 +1056,8 @@ class ChooseMusicSourceApplet(Applet):
         try:
             from jive.ui.framework import framework as fw
 
-            while (
-                fw.window_stack
-                and getattr(fw.window_stack[0], "_isChooseMusicSourceWindow", False)
+            while fw.window_stack and getattr(
+                fw.window_stack[0], "_isChooseMusicSourceWindow", False
             ):
                 log.debug("Hiding ChooseMusicSource window")
                 fw.window_stack[0].hide()
@@ -1052,7 +1087,9 @@ class ChooseMusicSourceApplet(Applet):
             try:
                 player = mgr.call_service("getCurrentPlayer")
             except Exception as exc:
-                log.error("showConnectToServer: failed to get current player: %s", exc, exc_info=True)
+                log.error(
+                    "showConnectToServer: failed to get current player: %s", exc, exc_info=True
+                )
 
         if player is not None and server is not None:
             self._show_connect_to_server(player, server)
@@ -1109,19 +1146,23 @@ class ChooseMusicSourceApplet(Applet):
                 return int(EVENT_CONSUME)
 
             menu = SimpleMenu("menu")
-            menu.add_item({
-                "text": self._get_string("SQUEEZEBOX_TRY_AGAIN", "Try Again"),
-                "sound": "WINDOWSHOW",
-                "callback": lambda *a: (
-                    self.connectPlayerToServer(player, server),
-                    window.hide(),
-                ),
-            })
-            menu.add_item({
-                "text": self._get_string("CHOOSE_OTHER_LIBRARY", "Choose Other Library"),
-                "sound": "WINDOWSHOW",
-                "callback": lambda *a: self._show_music_source_list(),
-            })
+            menu.add_item(
+                {
+                    "text": self._get_string("SQUEEZEBOX_TRY_AGAIN", "Try Again"),
+                    "sound": "WINDOWSHOW",
+                    "callback": lambda *a: (
+                        self.connectPlayerToServer(player, server),  # type: ignore[func-returns-value]
+                        window.hide(),  # type: ignore[func-returns-value]
+                    ),
+                }
+            )
+            menu.add_item(
+                {
+                    "text": self._get_string("CHOOSE_OTHER_LIBRARY", "Choose Other Library"),
+                    "sound": "WINDOWSHOW",
+                    "callback": lambda *a: self._show_music_source_list(),
+                }
+            )
 
             menu.add_action_listener("back", self, _cancel_action)
             menu.add_action_listener("go_home", self, _cancel_action)
@@ -1144,8 +1185,7 @@ class ChooseMusicSourceApplet(Applet):
             else:
                 help_text = self._get_string(
                     "SQUEEZEBOX_PROBLEM_HELP",
-                    f"There was a problem connecting to {server_name}. "
-                    "Please try again.",
+                    f"There was a problem connecting to {server_name}. Please try again.",
                 )
 
             help_widget = Textarea("help_text", help_text)
@@ -1194,20 +1234,22 @@ class ChooseMusicSourceApplet(Applet):
 
             menu = SimpleMenu("menu")
 
-            menu.add_item({
-                "text": self._get_string("SQUEEZEBOX_TRY_AGAIN", "Try Again"),
-                "sound": "WINDOWHIDE",
-                "callback": lambda *a: (
-                    _get_applet_manager().call_service(
-                        "squeezeCenterPassword",
-                        server,
-                        lambda: self.selectServer(server, True),
-                        self.title_style,
-                    )
-                    if _get_applet_manager() is not None
-                    else None
-                ),
-            })
+            menu.add_item(
+                {
+                    "text": self._get_string("SQUEEZEBOX_TRY_AGAIN", "Try Again"),
+                    "sound": "WINDOWHIDE",
+                    "callback": lambda *a: (
+                        _get_applet_manager().call_service(
+                            "squeezeCenterPassword",
+                            server,
+                            lambda: self.selectServer(server, True),
+                            self.title_style,
+                        )
+                        if _get_applet_manager() is not None
+                        else None
+                    ),
+                }
+            )
 
             def _cancel_action(*_args: Any) -> int:
                 window.play_sound("WINDOWHIDE")
@@ -1298,10 +1340,7 @@ class ChooseMusicSourceApplet(Applet):
 
     def notify_serverConnected(self, server: Any) -> None:
         """Handle server connected notification."""
-        if (
-            not self.wait_for_connect
-            or self.wait_for_connect.get("server") is not server
-        ):
+        if not self.wait_for_connect or self.wait_for_connect.get("server") is not server:
             return
 
         log.info("notify_serverConnected")
@@ -1311,7 +1350,11 @@ class ChooseMusicSourceApplet(Applet):
             try:
                 iconbar.setServerError("OK")
             except (AttributeError, TypeError) as exc:
-                log.error("notify_serverConnected: failed to set iconbar server status: %s", exc, exc_info=True)
+                log.error(
+                    "notify_serverConnected: failed to set iconbar server status: %s",
+                    exc,
+                    exc_info=True,
+                )
 
         # Check if we should auto-dismiss
         if not self.ignore_server_connected:
@@ -1361,7 +1404,9 @@ class ChooseMusicSourceApplet(Applet):
                 if player is not current:
                     return
             except Exception as exc:
-                log.error("notify_playerDelete: failed to get current player: %s", exc, exc_info=True)
+                log.error(
+                    "notify_playerDelete: failed to get current player: %s", exc, exc_info=True
+                )
         self._update_server_list(player)
 
     # snake_case alias
@@ -1416,7 +1461,9 @@ class ChooseMusicSourceApplet(Applet):
                     elif hasattr(self.server_menu, "updatedItem"):
                         self.server_menu.updatedItem(item)
                 except Exception as exc:
-                    log.warning("_update_server_list: failed to update menu item %s: %s", item_id, exc)
+                    log.warning(
+                        "_update_server_list: failed to update menu item %s: %s", item_id, exc
+                    )
 
     # Lua alias
     _updateServerList = _update_server_list
@@ -1441,7 +1488,9 @@ class ChooseMusicSourceApplet(Applet):
             try:
                 mgr.call_service("setPollList", poll)
             except Exception as exc:
-                log.error("_add_remote_server: failed to call setPollList service: %s", exc, exc_info=True)
+                log.error(
+                    "_add_remote_server: failed to call setPollList service: %s", exc, exc_info=True
+                )
 
         settings["poll"] = poll
         self._store_settings(settings)
@@ -1550,7 +1599,11 @@ class ChooseMusicSourceApplet(Applet):
                 if settings is not None:
                     return settings  # type: ignore[no-any-return]
             except Exception as exc:
-                log.error("_get_settings: failed to retrieve settings from applet db: %s", exc, exc_info=True)
+                log.error(
+                    "_get_settings: failed to retrieve settings from applet db: %s",
+                    exc,
+                    exc_info=True,
+                )
 
         if self._settings is None:
             self._settings = {"poll": {"255.255.255.255": "255.255.255.255"}}
@@ -1660,7 +1713,9 @@ class ChooseMusicSourceApplet(Applet):
                 if resolved:
                     return resolved  # type: ignore[no-any-return]
             except Exception as exc:
-                log.debug("_get_string: failed to resolve token %r from _strings_table: %s", token, exc)
+                log.debug(
+                    "_get_string: failed to resolve token %r from _strings_table: %s", token, exc
+                )
 
         if self._entry is not None:
             st = self._entry.get("strings_table")
@@ -1670,7 +1725,11 @@ class ChooseMusicSourceApplet(Applet):
                     if resolved:
                         return resolved  # type: ignore[no-any-return]
                 except Exception as exc:
-                    log.debug("_get_string: failed to resolve token %r from entry strings_table: %s", token, exc)
+                    log.debug(
+                        "_get_string: failed to resolve token %r from entry strings_table: %s",
+                        token,
+                        exc,
+                    )
 
         return fallback
 

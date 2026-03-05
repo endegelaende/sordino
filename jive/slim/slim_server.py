@@ -102,9 +102,7 @@ _minimum_version: str = "7.4"
 # ---------------------------------------------------------------------------
 
 # Weak-value dict: enforces one SlimServer instance per ID.
-_server_ids: weakref.WeakValueDictionary[str, "SlimServer"] = (
-    weakref.WeakValueDictionary()
-)
+_server_ids: weakref.WeakValueDictionary[str, "SlimServer"] = weakref.WeakValueDictionary()
 
 # Active servers (strong references, removed explicitly via free())
 _server_list: Dict[str, "SlimServer"] = {}
@@ -237,9 +235,7 @@ class SlimServer:
         self.artwork_fetch_count: int = 0
 
         # Decoded image cache (weak-value dict)
-        self.image_cache: weakref.WeakValueDictionary[str, Any] = (
-            weakref.WeakValueDictionary()
-        )
+        self.image_cache: weakref.WeakValueDictionary[str, Any] = weakref.WeakValueDictionary()
 
         # PIN for SqueezeNetwork linking
         self.pin: Any = False  # str | False
@@ -259,10 +255,8 @@ class SlimServer:
                 "artwork", self, _process_artwork_queue_gen, priority=PRIORITY_LOW
             )
         except (ImportError, Exception) as exc:
-            log.warning(
-                "SlimServer.__init__: could not create artwork fetch task: %s", exc
-            )
-            self._artwork_fetch_task: Optional[Any] = None
+            log.warning("SlimServer.__init__: could not create artwork fetch task: %s", exc)
+            self._artwork_fetch_task = None
 
         # Register in weak dict
         _server_ids[self.id] = self
@@ -295,9 +289,7 @@ class SlimServer:
 
                 self._comet = Comet(self.jnt, self.name)
             except ImportError:
-                raise RuntimeError(
-                    "Comet class not available — cannot create connection"
-                )
+                raise RuntimeError("Comet class not available — cannot create connection")
         return self._comet
 
     @comet.setter
@@ -430,14 +422,8 @@ class SlimServer:
             for player_info in players_loop:
                 cur_player = PlayerCls.get_current_player()
                 if (
-                    (
-                        len(_locally_requested_servers) > 0
-                        and self not in _locally_requested_servers
-                    )
-                    or (
-                        len(_locally_requested_servers) == 0
-                        and self is not _current_server
-                    )
+                    (len(_locally_requested_servers) > 0 and self not in _locally_requested_servers)
+                    or (len(_locally_requested_servers) == 0 and self is not _current_server)
                 ) and (
                     _to_bool(player_info.get("connected"))
                     and cur_player is not None
@@ -511,9 +497,7 @@ class SlimServer:
                 is_sequence_number_in_sync = True
                 if player.is_local_player() and player_info.get("seq_no") is not None:
                     use_sequence_number = True
-                    if not player.is_sequence_number_in_sync(
-                        int(player_info["seq_no"])
-                    ):
+                    if not player.is_sequence_number_in_sync(int(player_info["seq_no"])):
                         is_sequence_number_in_sync = False
 
                 # Bug 16295: Only use serverstatus data for the current player
@@ -586,9 +570,7 @@ class SlimServer:
         self.upgrade_url = url or False
         self.upgrade_force = False
 
-        log.info(
-            "%s firmware=%s force=%s", self.name, self.upgrade_url, self.upgrade_force
-        )
+        log.info("%s firmware=%s force=%s", self.name, self.upgrade_url, self.upgrade_force)
 
         if old_url != self.upgrade_url or old_force != self.upgrade_force:
             if self.jnt:
@@ -760,9 +742,7 @@ class SlimServer:
                     from jive.net.http_pool import HttpPool
                     from jive.ui.task import PRIORITY_LOW
 
-                    self._artwork_pool = HttpPool(
-                        self.jnt, self.name, ip, port, 2, 1, PRIORITY_LOW
-                    )
+                    self._artwork_pool = HttpPool(self.jnt, self.name, ip, port, 2, 1, PRIORITY_LOW)
                 except (ImportError, AttributeError):
                     log.debug("HttpPool not available — artwork pool disabled")
 
@@ -873,16 +853,12 @@ class SlimServer:
             try:
                 self._artwork_pool.close()
             except Exception as exc:
-                log.warning(
-                    "_disconnect_server_internals: error closing artwork pool: %s", exc
-                )
+                log.warning("_disconnect_server_internals: error closing artwork pool: %s", exc)
 
         try:
             self.comet.disconnect()
         except Exception as exc:
-            log.warning(
-                "_disconnect_server_internals: error disconnecting comet: %s", exc
-            )
+            log.warning("_disconnect_server_internals: error disconnecting comet: %s", exc)
 
     def disconnect(self) -> None:
         """Force disconnect from the server."""
@@ -933,9 +909,7 @@ class SlimServer:
 
             self.jnt.arp(self.ip, arp_callback)
 
-    def notify_cometDisconnected(
-        self, comet: Any, idle_timeout_triggered: bool = False
-    ) -> None:
+    def notify_cometDisconnected(self, comet: Any, idle_timeout_triggered: bool = False) -> None:
         """Handle Comet disconnected event."""
         if self._comet is not comet:
             return
@@ -994,9 +968,7 @@ class SlimServer:
                         self.netstate,
                     )
                     if self.jnt:
-                        self.jnt.notify(
-                            "serverAuthFailed", self, self.auth_failure_count
-                        )
+                        self.jnt.notify("serverAuthFailed", self, self.auth_failure_count)
                 self.auth_failure_count += 1
 
     # ------------------------------------------------------------------
@@ -1229,9 +1201,7 @@ class SlimServer:
         logcache.debug("%s:fetch_artwork(%s => %s)", self, icon_id, url)
         return url
 
-    def _load_artwork_image(
-        self, cache_key: str, chunk: bytes, size: str
-    ) -> Optional[Any]:
+    def _load_artwork_image(self, cache_key: str, chunk: bytes, size: str) -> Optional[Any]:
         """
         Convert raw artwork bytes to a resized Surface.
 
@@ -1318,13 +1288,9 @@ class SlimServer:
                 self.artwork_fetch_count += 1
 
             except Exception as exc:
-                log.error(
-                    "Error processing artwork %s: %s", cache_key, exc, exc_info=True
-                )
+                log.error("Error processing artwork %s: %s", cache_key, exc, exc_info=True)
 
-    def _get_artwork_thumb_sink(
-        self, cache_key: str, size: str, url: str
-    ) -> Callable[..., None]:
+    def _get_artwork_thumb_sink(self, cache_key: str, size: str, url: str) -> Callable[..., None]:
         """Build a sink for artwork data."""
 
         def sink(chunk: Any = None, err: Any = None, request: Any = None) -> None:
@@ -1476,9 +1442,7 @@ class SlimServer:
     # User requests
     # ------------------------------------------------------------------
 
-    def user_request(
-        self, func: Optional[Callable[..., None]], *args: Any
-    ) -> Optional[Any]:
+    def user_request(self, func: Optional[Callable[..., None]], *args: Any) -> Optional[Any]:
         """
         Send a user-initiated request.
 

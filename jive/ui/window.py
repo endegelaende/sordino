@@ -186,9 +186,7 @@ class Window(Widget):
         window_id: Optional[str] = None,
     ) -> None:
         if not isinstance(style, str):
-            raise TypeError(
-                f"style parameter must be a string, got {type(style).__name__}"
-            )
+            raise TypeError(f"style parameter must be a string, got {type(style).__name__}")
 
         super().__init__(style)
 
@@ -282,7 +280,7 @@ class Window(Widget):
 
         if self.title_widget is not None:
             # Title Group already exists — just update the text
-            self.title_widget.set_widget_value("text", title)
+            self.title_widget.set_widget_value("text", title)  # type: ignore[attr-defined]
         else:
             # First call — create the title Group with a Label
             self.set_icon_widget("text", Label("text", title))
@@ -311,7 +309,7 @@ class Window(Widget):
         """Return a named widget from the title Group, or ``None``."""
         if self.title_widget is None:
             return None
-        return self.title_widget.get_widget(widget_key)  # type: ignore[union-attr]
+        return self.title_widget.get_widget(widget_key)  # type: ignore[attr-defined, no-any-return]
 
     def set_title_widget(self, title_widget: Widget) -> None:
         """Replace the entire title widget (Group).
@@ -390,9 +388,7 @@ class Window(Widget):
                     window.dispatch_new_event(int(EVENT_HIDE))
                     window.dispatch_new_event(int(EVENT_WINDOW_INACTIVE))
                     window = (
-                        window.get_lower_window()
-                        if getattr(window, "transparent", False)
-                        else None
+                        window.get_lower_window() if getattr(window, "transparent", False) else None
                     )
 
         # Auto-hide windows below
@@ -522,9 +518,7 @@ class Window(Widget):
                 window.dispatch_new_event(int(EVENT_WINDOW_ACTIVE))
                 window.dispatch_new_event(int(EVENT_SHOW))
                 window = (
-                    window.get_lower_window()
-                    if getattr(window, "transparent", False)
-                    else None
+                    window.get_lower_window() if getattr(window, "transparent", False) else None
                 )
 
             top_window.re_layout()
@@ -673,8 +667,7 @@ class Window(Widget):
 
         if widget.parent is not None:
             log.warn(
-                f"Adding widget {widget!r} to window, "
-                f"but it already has a parent {widget.parent!r}"
+                f"Adding widget {widget!r} to window, but it already has a parent {widget.parent!r}"
             )
 
         self._add_widget(widget)
@@ -876,7 +869,7 @@ class Window(Widget):
         for widget in self.z_widgets:
             if widget.is_hidden():
                 continue
-            widget.draw(surface, layer)  # type: ignore[call-arg]
+            widget.draw(surface, layer)
 
     # ==================================================================
     # Event handling
@@ -899,9 +892,7 @@ class Window(Widget):
             EventType,
         )
 
-        focus_events = (
-            int(EVENT_SCROLL) | int(EVENT_KEY_ALL) | int(EVENT_IR_ALL) | int(ACTION)
-        )
+        focus_events = int(EVENT_SCROLL) | int(EVENT_KEY_ALL) | int(EVENT_IR_ALL) | int(ACTION)
         if etype & focus_events:
             if self.focus is not None:
                 return self.focus._event(event)
@@ -1136,13 +1127,9 @@ class Window(Widget):
             excluded_actions.append("soft_reset")
 
         def _handler(event: Event) -> int:
-            return self._ignore_all_input_listener(
-                event, excluded_actions, ignored_callback
-            )
+            return self._ignore_all_input_listener(event, excluded_actions, ignored_callback)
 
-        self._ignore_all_input_handle = self.add_listener(
-            int(EVENT_ALL_INPUT), _handler
-        )
+        self._ignore_all_input_handle = self.add_listener(int(EVENT_ALL_INPUT), _handler)
 
     def _ignore_all_input_listener(
         self,
@@ -1173,9 +1160,7 @@ class Window(Widget):
         from jive.ui.event import Event as EventCls
 
         action_event = EventCls(int(ACTION), action=action_name)  # type: ignore[call-arg]
-        return self._ignore_all_input_listener(
-            action_event, excluded_actions, ignored_callback
-        )
+        return self._ignore_all_input_listener(action_event, excluded_actions, ignored_callback)
 
     def hide_on_all_button_input(self) -> None:
         """Auto-hide this window on any button/mouse input."""
@@ -1331,9 +1316,7 @@ class Window(Widget):
             rb_total = rb + lb
             bb_total = bb + tb
 
-            def _max_bounds(
-                bx: int, by: int, bw: int, bh: int
-            ) -> Tuple[int, int, int, int]:
+            def _max_bounds(bx: int, by: int, bw: int, bh: int) -> Tuple[int, int, int, int]:
                 return (bx, by, min(ww, bw), min(wh, bh))
 
             if position == int(LAYOUT_NORTH):
@@ -1732,9 +1715,7 @@ def _transition_bump_down(window: Window) -> Optional[Callable[..., Any]]:
 # ======================================================================
 
 
-def transition_push_left(
-    old_window: Window, new_window: Window
-) -> Optional[Callable[..., Any]]:
+def transition_push_left(old_window: Window, new_window: Window) -> Optional[Callable[..., Any]]:
     """
     Horizontal push-left transition (new window slides in from right).
     """
@@ -1821,9 +1802,7 @@ def _transition_push_left_impl(
             fw._kill_transition()
             return
 
-        x = math.ceil(
-            screen_width - (remaining[0] * remaining[0] * remaining[0]) / scale
-        )
+        x = math.ceil(screen_width - (remaining[0] * remaining[0] * remaining[0]) / scale)
 
         # Blit pre-rendered snapshots with horizontal offsets.
         # Old window slides left, new window slides in from right.
@@ -1849,9 +1828,7 @@ def _transition_push_left_impl(
     return _step
 
 
-def transition_push_right(
-    old_window: Window, new_window: Window
-) -> Optional[Callable[..., Any]]:
+def transition_push_right(old_window: Window, new_window: Window) -> Optional[Callable[..., Any]]:
     """
     Horizontal push-right transition (new window slides in from left).
     """
@@ -1937,9 +1914,7 @@ def _transition_push_right_impl(
             fw._kill_transition()
             return
 
-        x = math.ceil(
-            screen_width - (remaining[0] * remaining[0] * remaining[0]) / scale
-        )
+        x = math.ceil(screen_width - (remaining[0] * remaining[0] * remaining[0]) / scale)
 
         # Blit pre-rendered snapshots with horizontal offsets.
         # Old window slides right, new window slides in from left.
@@ -1970,16 +1945,12 @@ def _transition_push_right_impl(
 # ======================================================================
 
 
-def transition_fade_in(
-    old_window: Window, new_window: Window
-) -> Optional[Callable[..., Any]]:
+def transition_fade_in(old_window: Window, new_window: Window) -> Optional[Callable[..., Any]]:
     """Fade-in transition (400ms)."""
     return _transition_fade_in_impl(old_window, new_window, 400)
 
 
-def transition_fade_in_fast(
-    old_window: Window, new_window: Window
-) -> Optional[Callable[..., Any]]:
+def transition_fade_in_fast(old_window: Window, new_window: Window) -> Optional[Callable[..., Any]]:
     """Fast fade-in transition (100ms)."""
     return _transition_fade_in_impl(old_window, new_window, 100)
 
@@ -2128,8 +2099,8 @@ Window.focusWidget = Window.focus_widget  # type: ignore[attr-defined]
 Window.setTitle = Window.set_title  # type: ignore[attr-defined]
 Window.getTitle = Window.get_title  # type: ignore[attr-defined]
 Window.getLowerWindow = Window.get_lower_window  # type: ignore[attr-defined]
-Window.getWindow = Window.get_window  # type: ignore[attr-defined]
-Window.checkLayout = Window.check_layout  # type: ignore[attr-defined]
+Window.getWindow = Window.get_window  # type: ignore[assignment]
+Window.checkLayout = Window.check_layout  # type: ignore[assignment]
 Window.setSkin = Window.set_skin  # type: ignore[attr-defined]
 Window.getSkin = Window.get_skin  # type: ignore[attr-defined]
 Window.setAllowScreensaver = Window.set_allow_screensaver  # type: ignore[attr-defined]

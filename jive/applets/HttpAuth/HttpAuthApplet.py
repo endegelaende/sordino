@@ -326,7 +326,11 @@ class HttpAuthApplet(Applet):
             try:
                 self.connecting_popup.hide()
             except Exception as exc:
-                log.error("notify_serverConnected: failed to hide connecting popup: %s", exc, exc_info=True)
+                log.error(
+                    "notify_serverConnected: failed to hide connecting popup: %s",
+                    exc,
+                    exc_info=True,
+                )
         if self.setup_next is not None:
             self.setup_next()
 
@@ -384,7 +388,7 @@ class HttpAuthApplet(Applet):
         menu.add_action_listener("back", self, cancel_action)
         menu.add_action_listener("go_home", self, cancel_action)
 
-        menu.setHeaderWidget(textarea)  # type: ignore[attr-defined]
+        menu.setHeaderWidget(textarea)
         window.add_widget(menu)
 
         self.tie_and_show_window(window)
@@ -409,6 +413,7 @@ class HttpAuthApplet(Applet):
     def _get_jnt() -> Any:
         try:
             from jive.jive_main import jive_main as _jm
+
             if _jm is not None:
                 return getattr(_jm, "jnt", None)
         except ImportError as exc:

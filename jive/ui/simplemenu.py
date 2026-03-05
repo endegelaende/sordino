@@ -234,9 +234,7 @@ class SimpleMenu(Menu):
     # Class-level comparators accessible as ``SimpleMenu.itemComparatorAlpha``
     itemComparatorAlpha = staticmethod(item_comparator_alpha)
     itemComparatorWeightAlpha = staticmethod(item_comparator_weight_alpha)
-    itemComparatorComplexWeightAlpha = staticmethod(
-        item_comparator_complex_weight_alpha
-    )
+    itemComparatorComplexWeightAlpha = staticmethod(item_comparator_complex_weight_alpha)
     itemComparatorRank = staticmethod(item_comparator_rank)
 
     def __init__(
@@ -245,9 +243,7 @@ class SimpleMenu(Menu):
         items: Optional[List[MenuItem]] = None,
         item_listener: Optional[Callable[..., int]] = None,
     ) -> None:
-        super().__init__(
-            style, item_listener=item_listener or self._default_item_listener
-        )
+        super().__init__(style, item_listener=item_listener or self._default_item_listener)
 
         # Item data
         self._items: List[MenuItem] = list(items) if items else []
@@ -305,21 +301,15 @@ class SimpleMenu(Menu):
         else:
             return int(EVENT_UNUSED)
 
-        etype = (
-            event.get_type()
-            if hasattr(event, "get_type")
-            else getattr(event, "type", 0)
-        )
+        etype = event.get_type() if hasattr(event, "get_type") else getattr(event, "type", 0)
 
         # --- EVENT_ACTION or ACTION "go" → item.callback ---
         # Lua: if (event:getType() == EVENT_ACTION and item.callback) or
         #         (item.isPlayableItem and event:getType() == ACTION and
         #          event:getAction() == "play") then
-        is_event_action = (etype == int(EVENT_ACTION))
+        is_event_action = etype == int(EVENT_ACTION)
         is_action_go = (
-            etype == int(ACTION)
-            and hasattr(event, "get_action")
-            and event.get_action() == "go"
+            etype == int(ACTION) and hasattr(event, "get_action") and event.get_action() == "go"
         )
         is_playable = (
             data_item.get("isPlayableItem")
@@ -401,7 +391,7 @@ class SimpleMenu(Menu):
     # Item management (overrides / extensions)
     # ------------------------------------------------------------------
 
-    def set_items(self, items: List[MenuItem]) -> None:
+    def set_items(self, items: List[MenuItem]) -> None:  # type: ignore[override]
         """
         Replace all items with *items*.
 
@@ -418,16 +408,14 @@ class SimpleMenu(Menu):
         if self._comparator is not None:
             self._sort()
 
-        if self.list_size > 0 and (
-            self.selected is None or self.selected > self.list_size
-        ):
+        if self.list_size > 0 and (self.selected is None or self.selected > self.list_size):
             self.selected = 1
 
         self.top_item = 1
         self._update_widgets()
         self.re_layout()
 
-    setItems = set_items
+    setItems = set_items  # type: ignore[assignment]
 
     def add_item(self, item: MenuItem) -> None:
         """Append a single item to the end of the list.
@@ -804,9 +792,7 @@ class SimpleMenu(Menu):
                 from jive.ui.event import Event as Evt
 
                 evt = Evt(int(EVENT_ACTION))
-                r = self.item_listener(
-                    self, self.list, data_item, self.selected, evt
-                )
+                r = self.item_listener(self, self.list, data_item, self.selected, evt)
                 if r != int(EVENT_UNUSED):
                     return r
 
@@ -828,9 +814,7 @@ class SimpleMenu(Menu):
 
     def __repr__(self) -> str:
         sel = self.selected or 0
-        return (
-            f"SimpleMenu(items={self.list_size}, selected={sel}, top={self.top_item})"
-        )
+        return f"SimpleMenu(items={self.list_size}, selected={sel}, top={self.top_item})"
 
     def __str__(self) -> str:
         return self.__repr__()

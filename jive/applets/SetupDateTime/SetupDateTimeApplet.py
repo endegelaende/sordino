@@ -88,23 +88,17 @@ class SetupDateTimeApplet(Applet):
                 {
                     "text": self.string("DATETIME_DATEFORMAT"),
                     "sound": "WINDOWSHOW",
-                    "callback": lambda event=None, mi=None: self.dateFormatSetting(
-                        menu_item
-                    ),
+                    "callback": lambda event=None, mi=None: self.dateFormatSetting(menu_item),
                 },
                 {
                     "text": self.string("DATETIME_SHORTDATEFORMAT"),
                     "sound": "WINDOWSHOW",
-                    "callback": lambda event=None, mi=None: self.shortDateFormatSetting(
-                        menu_item
-                    ),
+                    "callback": lambda event=None, mi=None: self.shortDateFormatSetting(menu_item),
                 },
                 {
                     "text": self.string("DATETIME_WEEKSTART"),
                     "sound": "WINDOWSHOW",
-                    "callback": lambda event=None, mi=None: self.weekstartSetting(
-                        menu_item
-                    ),
+                    "callback": lambda event=None, mi=None: self.weekstartSetting(menu_item),
                 },
             ],
         )
@@ -114,9 +108,7 @@ class SetupDateTimeApplet(Applet):
         # Store settings when the window is popped
         EVENT_WINDOW_POP = self._get_event_window_pop()
         if EVENT_WINDOW_POP is not None:
-            window.add_listener(
-                EVENT_WINDOW_POP, lambda *_a, **_kw: self.store_settings()
-            )
+            window.add_listener(EVENT_WINDOW_POP, lambda *_a, **_kw: self.store_settings())
 
         self.tie_and_show_window(window)
         return window
@@ -135,12 +127,7 @@ class SetupDateTimeApplet(Applet):
         RadioButton = self._get_radio_button_class()
         RadioGroup = self._get_radio_group_class()
 
-        if (
-            Window is None
-            or SimpleMenu is None
-            or RadioButton is None
-            or RadioGroup is None
-        ):
+        if Window is None or SimpleMenu is None or RadioButton is None or RadioGroup is None:
             log.warn("UI classes not available — cannot show time setting")
             return None
 
@@ -200,12 +187,7 @@ class SetupDateTimeApplet(Applet):
         RadioButton = self._get_radio_button_class()
         RadioGroup = self._get_radio_group_class()
 
-        if (
-            Window is None
-            or SimpleMenu is None
-            or RadioButton is None
-            or RadioGroup is None
-        ):
+        if Window is None or SimpleMenu is None or RadioButton is None or RadioGroup is None:
             log.warn("UI classes not available — cannot show date format setting")
             return None
 
@@ -266,12 +248,7 @@ class SetupDateTimeApplet(Applet):
         RadioButton = self._get_radio_button_class()
         RadioGroup = self._get_radio_group_class()
 
-        if (
-            Window is None
-            or SimpleMenu is None
-            or RadioButton is None
-            or RadioGroup is None
-        ):
+        if Window is None or SimpleMenu is None or RadioButton is None or RadioGroup is None:
             log.warn("UI classes not available — cannot show short date format setting")
             return None
 
@@ -332,12 +309,7 @@ class SetupDateTimeApplet(Applet):
         RadioButton = self._get_radio_button_class()
         RadioGroup = self._get_radio_group_class()
 
-        if (
-            Window is None
-            or SimpleMenu is None
-            or RadioButton is None
-            or RadioGroup is None
-        ):
+        if Window is None or SimpleMenu is None or RadioButton is None or RadioGroup is None:
             log.warn("UI classes not available — cannot show weekstart setting")
             return None
 
@@ -462,8 +434,7 @@ class SetupDateTimeApplet(Applet):
         lang = self._get_current_locale()
 
         log.debug(
-            "Using language (%s) and timezone (%s) to determine "
-            "date/time default formats",
+            "Using language (%s) and timezone (%s) to determine date/time default formats",
             lang,
             tz,
         )
@@ -473,11 +444,7 @@ class SetupDateTimeApplet(Applet):
         if (
             lang == "EN"
             and tz
-            and (
-                tz.startswith("America")
-                or tz.startswith("Australia")
-                or tz.startswith("Pacific")
-            )
+            and (tz.startswith("America") or tz.startswith("Australia") or tz.startswith("Pacific"))
         ):
             self.setHours("12")
         else:
@@ -664,11 +631,9 @@ class SetupDateTimeApplet(Applet):
         except ImportError as exc:
             log.debug("simplemenu import failed, trying alternative: %s", exc)
         try:
-            from jive.ui.simple_menu import (
-                SimpleMenu,  # type: ignore[import-not-found, no-redef]
-            )
+            from jive.ui.simple_menu import SimpleMenu as _SM  # type: ignore[import-not-found]
 
-            return SimpleMenu
+            return _SM
         except ImportError:
             return None
 

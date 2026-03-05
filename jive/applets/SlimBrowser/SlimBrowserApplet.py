@@ -395,7 +395,7 @@ class SlimBrowserApplet(Applet):
 
         self._step_stack.append(step)
 
-        if log.isEnabledFor(10):  # type: ignore[attr-defined]  # DEBUG
+        if log.isEnabledFor(10):  # DEBUG
             log.debug("Pushed step, stack size: %d", len(self._step_stack))
 
     def _pop_step(self) -> Optional[Dict[str, Any]]:
@@ -403,7 +403,7 @@ class SlimBrowserApplet(Applet):
         if not self._step_stack:
             return None
         popped = self._step_stack.pop()
-        if log.isEnabledFor(10):  # type: ignore[attr-defined]
+        if log.isEnabledFor(10):
             log.debug("Popped step, stack size: %d", len(self._step_stack))
         return popped
 
@@ -730,15 +730,15 @@ class SlimBrowserApplet(Applet):
             return Button(
                 Group("button_go_now_playing", {"icon": Icon("icon")}),
                 lambda: (
-                    _fw.pushAction("go_now_playing") if _fw else None,  # type: ignore[attr-defined]
+                    _fw.pushAction("go_now_playing") if _fw else None,
                     EVENT_CONSUME,
                 )[-1],
                 lambda: (
-                    _fw.pushAction("title_right_hold") if _fw else None,  # type: ignore[attr-defined]
+                    _fw.pushAction("title_right_hold") if _fw else None,
                     EVENT_CONSUME,
                 )[-1],
                 lambda: (
-                    _fw.pushAction("soft_reset") if _fw else None,  # type: ignore[attr-defined]
+                    _fw.pushAction("soft_reset") if _fw else None,
                     EVENT_CONSUME,
                 )[-1],
             )
@@ -1391,10 +1391,10 @@ class SlimBrowserApplet(Applet):
 
             popup = Popup("waiting_popup")
             icon = Icon("icon_connecting")
-            popup.addWidget(icon)
+            popup.addWidget(icon)  # type: ignore[attr-defined]
             if msg:
                 label = Label("text", msg)
-                popup.addWidget(label)
+                popup.addWidget(label)  # type: ignore[attr-defined]
             popup.show()
         except ImportError:
             log.info("_input_in_progress: UI not available, msg=%s", msg)
@@ -1623,9 +1623,9 @@ class SlimBrowserApplet(Applet):
             try:
                 from jive.ui.menu import Menu
 
-                menu = Menu(  # type: ignore[call-arg]
+                menu = Menu(
                     db.menu_style(),
-                    lambda m, s, w, tri, trs: self._browse_menu_renderer(  # type: ignore[arg-type, return-value]
+                    lambda m, s, w, tri, trs: self._browse_menu_renderer(
                         m, s, w, tri, trs
                     ),
                     lambda m, s, mi, dbi, evt: self._browse_menu_listener(
@@ -1670,7 +1670,7 @@ class SlimBrowserApplet(Applet):
                     log.debug("EVENT_WINDOW_POP called")
                     self._pop_step()
 
-                window.addListener(EVENT_WINDOW_POP, _on_pop)
+                window.addListener(EVENT_WINDOW_POP, _on_pop)  # type: ignore[arg-type]
             except ImportError as exc:
                 log.warning(
                     "_new_destination: EVENT_WINDOW_POP constant not available: %s", exc
@@ -1982,13 +1982,13 @@ class SlimBrowserApplet(Applet):
             # Handle checkbox / radio / choice items
             if item.get("radio"):
                 group._type = "radio"
-                group.set_widget("check", self._radio_item(item, db))
+                group.set_widget("check", self._radio_item(item, db))  # type: ignore[arg-type]
             elif item.get("checkbox"):
                 group._type = "checkbox"
-                group.set_widget("check", self._checkbox_item(item, db))
+                group.set_widget("check", self._checkbox_item(item, db))  # type: ignore[arg-type]
             elif item.get("selectedIndex"):
                 group._type = "choice"
-                group.set_widget("check", self._choice_item(item, db))
+                group.set_widget("check", self._choice_item(item, db))  # type: ignore[arg-type]
             else:
                 # Clear previous type if any
                 if getattr(group, "_type", None):
@@ -2551,9 +2551,7 @@ class SlimBrowserApplet(Applet):
                     elif next_window == "home":
                         if item.get("serverLinked") and self._server is not None:
                             try:
-                                from jive.net.network_thread import (
-                                    jnt,  # type: ignore[attr-defined]
-                                )
+                                from jive.net.network_thread import jnt  # type: ignore[attr-defined]
 
                                 if jnt is not None:
                                     jnt.notify("serverLinked", self._server, True)
@@ -2755,7 +2753,7 @@ class SlimBrowserApplet(Applet):
         if hasattr(window, "setButtonAction"):
             window.setButtonAction("lbutton", None, None)
 
-        window.addWidget(menu)
+        window.addWidget(menu)  # type: ignore[attr-defined]
         if hasattr(window, "setShowFrameworkWidgets"):
             window.setShowFrameworkWidgets(False)
         if hasattr(window, "setAllowScreensaver"):
@@ -3815,9 +3813,11 @@ class SlimBrowserApplet(Applet):
                         from_val, qty = self._decide_first_chunk(step, json_action)
 
                         def _on_loaded(
-                            _step: Dict[str, Any] = step,
+                            _step: Optional[Dict[str, Any]] = step,
                             _cb: Any = loaded_callback,
                         ) -> None:
+                            if _step is None:
+                                return
                             last_index = None
                             if self._player is not None:
                                 cs = _step.get("commandString")
@@ -4142,14 +4142,14 @@ class SlimBrowserApplet(Applet):
             from jive.ui.popup import Popup
 
             popup = Popup("waiting_popup")
-            popup.addWidget(Icon("icon_connecting"))
-            popup.addWidget(Label("text", self._str("SLIMBROWSER_CONNECTING_TO")))
+            popup.addWidget(Icon("icon_connecting"))  # type: ignore[attr-defined]
+            popup.addWidget(Label("text", self._str("SLIMBROWSER_CONNECTING_TO")))  # type: ignore[attr-defined]
             server_name = ""
             if hasattr(server, "getName"):
                 server_name = server.getName() or ""
             elif hasattr(server, "get_name"):
                 server_name = server.get_name() or ""
-            popup.addWidget(Label("subtext", server_name))
+            popup.addWidget(Label("subtext", server_name))  # type: ignore[attr-defined]
 
             if hasattr(popup, "ignoreAllInputExcept"):
                 popup.ignoreAllInputExcept(
@@ -4320,7 +4320,7 @@ class SlimBrowserApplet(Applet):
                 )
             )
 
-        window.addWidget(menu)
+        window.addWidget(menu)  # type: ignore[attr-defined]
 
         self.server_error_window = window
         if hasattr(window, "addListener"):
@@ -4328,7 +4328,7 @@ class SlimBrowserApplet(Applet):
             def _on_pop(evt: Any = None) -> None:
                 self.server_error_window = False
 
-            window.addListener(EVENT_WINDOW_POP, _on_pop)
+            window.addListener(EVENT_WINDOW_POP, _on_pop)  # type: ignore[arg-type]
 
         window.show()
 

@@ -429,12 +429,12 @@ class Tile:
         self._flags |= _FLAG_ALPHA
 
         if self._sdl is not None:
-            self._sdl.set_alpha(flags if flags else None)  # type: ignore[arg-type]
+            self._sdl.set_alpha(flags if flags else None)
             return
 
         for img in self._images:
             if img is not None:
-                img.set_alpha(flags if flags else None)  # type: ignore[arg-type]
+                img.set_alpha(flags if flags else None)
 
     # ==================================================================
     # Blitting

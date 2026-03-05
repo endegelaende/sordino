@@ -131,9 +131,7 @@ class ScreenshotApplet(Applet):
 
             if window is not None:
                 try:
-                    from jive.ui.constants import (
-                        JIVE_LAYER_ALL,  # type: ignore[attr-defined]
-                    )
+                    from jive.ui.constants import JIVE_LAYER_ALL  # type: ignore[attr-defined]
 
                     window.draw(srf, JIVE_LAYER_ALL)
                 except Exception:
@@ -225,12 +223,12 @@ class ScreenshotApplet(Applet):
             The directory path for saving screenshots.
         """
         # Try user directory first
-        path = None
+        path: str | None = None
         try:
             from jive.applet_manager import applet_manager as _mgr
 
             if _mgr is not None and hasattr(_mgr, "system") and _mgr.system is not None:
-                path = _mgr.system.get_user_dir()
+                path = str(_mgr.system.get_user_dir())
         except Exception as exc:
             log.debug("getUserDir failed: %s", exc)
 
@@ -264,9 +262,7 @@ class ScreenshotApplet(Applet):
     def _get_top_window(fw: Any) -> Any:
         """Get the topmost window from the window stack."""
         try:
-            stack = getattr(fw, "window_stack", None) or getattr(
-                fw, "windowStack", None
-            )
+            stack = getattr(fw, "window_stack", None) or getattr(fw, "windowStack", None)
             if stack and len(stack) > 0:
                 return stack[0]
         except Exception as exc:

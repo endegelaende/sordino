@@ -281,7 +281,7 @@ class Framework:
             return
 
         pygame.init()
-        pygame.freetype.init()  # type: ignore[attr-defined]
+        pygame.freetype.init()
 
         flags = 0
         if fullscreen:
@@ -1638,7 +1638,7 @@ class Framework:
     # using ``Framework.windowStack`` works.
 
     @property
-    def windowStack(self) -> list:  # noqa: N802
+    def windowStack(self) -> list[Any]:  # noqa: N802
         """Alias for ``window_stack``."""
         return self.window_stack
 

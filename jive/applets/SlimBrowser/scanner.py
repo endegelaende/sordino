@@ -37,9 +37,7 @@ log = logger("applet.SlimBrowser")
 # Tuning constants
 POSITION_STEP = 5
 POPUP_AUTOCLOSE_INTERVAL = 10000  # close popup after this much inactivity (ms)
-AUTOINVOKE_INTERVAL_LOCAL = (
-    400  # invoke gotoTime after this much inactivity for local tracks
-)
+AUTOINVOKE_INTERVAL_LOCAL = 400  # invoke gotoTime after this much inactivity for local tracks
 AUTOINVOKE_INTERVAL_REMOTE = 2000  # and this much for remote streams
 ACCELERATION_INTERVAL = 350  # events faster than this cause acceleration
 ACCELERATION_INTERVAL_SLOW = 200  # but less so unless faster than this
@@ -116,15 +114,11 @@ class Scanner:
             from jive.ui.timer import Timer as UiTimer
 
             self.display_timer = UiTimer(1000, self._update_elapsed_time)
-            self.auto_invoke_timer = UiTimer(
-                AUTOINVOKE_INTERVAL_LOCAL, self._goto_time, once=True
-            )
+            self.auto_invoke_timer = UiTimer(AUTOINVOKE_INTERVAL_LOCAL, self._goto_time, once=True)
             self.hold_timer = UiTimer(100, self._update_selected_time)
         except (ImportError, TypeError):
             self.display_timer = _TimerStub(1000, self._update_elapsed_time)
-            self.auto_invoke_timer = _TimerStub(
-                AUTOINVOKE_INTERVAL_LOCAL, self._goto_time
-            )
+            self.auto_invoke_timer = _TimerStub(AUTOINVOKE_INTERVAL_LOCAL, self._goto_time)
             self.hold_timer = _TimerStub(100, self._update_selected_time)
 
     # ------------------------------------------------------------------
@@ -227,9 +221,7 @@ class Scanner:
         title = Label("heading", "")
         popup.addWidget(title)  # type: ignore[attr-defined]
 
-        def _slider_callback(
-            slider_widget: Any, value: int, done: bool = False
-        ) -> None:
+        def _slider_callback(slider_widget: Any, value: int, done: bool = False) -> None:
             self.delta = value - int(self.elapsed)
             self.elapsed = value
             self._update_selected_time()
@@ -359,9 +351,7 @@ class Scanner:
         self._update_display()
 
         # Restart auto-invoke timer
-        if self.auto_invoke_timer is not None and hasattr(
-            self.auto_invoke_timer, "restart"
-        ):
+        if self.auto_invoke_timer is not None and hasattr(self.auto_invoke_timer, "restart"):
             self.auto_invoke_timer.restart(self.autoinvoke_time)
 
     # ------------------------------------------------------------------
@@ -370,9 +360,7 @@ class Scanner:
 
     def _goto_time(self) -> None:
         """Send the gototime command to the player."""
-        if self.auto_invoke_timer is not None and hasattr(
-            self.auto_invoke_timer, "stop"
-        ):
+        if self.auto_invoke_timer is not None and hasattr(self.auto_invoke_timer, "stop"):
             self.auto_invoke_timer.stop()
 
         if self.popup is None:
@@ -498,9 +486,7 @@ class Scanner:
 
             # BACK closes the popup & cancels any pending change
             if action_name == "back":
-                if self.auto_invoke_timer is not None and hasattr(
-                    self.auto_invoke_timer, "stop"
-                ):
+                if self.auto_invoke_timer is not None and hasattr(self.auto_invoke_timer, "stop"):
                     self.auto_invoke_timer.stop()
                 if self.popup is not None and hasattr(self.popup, "showBriefly"):
                     self.popup.showBriefly(0)
@@ -618,7 +604,7 @@ class Scanner:
             from jive.ui.framework import framework as _fw
 
             if _fw is not None and hasattr(_fw, "getTicks"):
-                return _fw.getTicks()  # type: ignore[no-any-return]
+                return _fw.getTicks()
             if _fw is not None and hasattr(_fw, "get_ticks"):
                 return _fw.get_ticks()
         except ImportError as exc:

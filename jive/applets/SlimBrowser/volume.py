@@ -274,9 +274,7 @@ class Volume:
         icon = Icon("icon_popup_volume")
         popup.addWidget(icon)  # type: ignore[attr-defined]
 
-        def _slider_callback(
-            slider_widget: Any, value: int, done: bool = False
-        ) -> None:
+        def _slider_callback(slider_widget: Any, value: int, done: bool = False) -> None:
             self.delta = value - self.volume
             self._update_volume(direct_set=value)
 
@@ -514,9 +512,7 @@ class Volume:
                     delay, self._rate_limit_cleanup, once=True
                 )
             except (ImportError, TypeError):
-                self.rate_limiter_cleanup_timer = _TimerStub(
-                    delay, self._rate_limit_cleanup
-                )
+                self.rate_limiter_cleanup_timer = _TimerStub(delay, self._rate_limit_cleanup)
 
         if hasattr(self.rate_limiter_cleanup_timer, "restart"):
             self.rate_limiter_cleanup_timer.restart()
@@ -535,8 +531,7 @@ class Volume:
                 returned = self.player.volume(cleanup_vol, True)
             if returned is None:
                 log.warn(
-                    "timer-set volume value should always go through, "
-                    "since send param is 'true'"
+                    "timer-set volume value should always go through, since send param is 'true'"
                 )
                 return
             self.volume = returned
@@ -775,9 +770,7 @@ class Volume:
                 return EVENT_CONSUME
 
             # Volume+ and volume- pressed simultaneously = mute
-            if keycode & (KEY_VOLUME_UP | KEY_VOLUME_DOWN) == (
-                KEY_VOLUME_UP | KEY_VOLUME_DOWN
-            ):
+            if keycode & (KEY_VOLUME_UP | KEY_VOLUME_DOWN) == (KEY_VOLUME_UP | KEY_VOLUME_DOWN):
                 self._update_volume(mute=(self.volume >= 0))
                 return EVENT_CONSUME
 
@@ -872,7 +865,7 @@ class Volume:
             from jive.ui.framework import framework as _fw
 
             if _fw is not None and hasattr(_fw, "getTicks"):
-                return _fw.getTicks()  # type: ignore[no-any-return]
+                return _fw.getTicks()
             if _fw is not None and hasattr(_fw, "get_ticks"):
                 return _fw.get_ticks()
         except ImportError as exc:
