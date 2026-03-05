@@ -1,34 +1,36 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200" width="200" height="200">
   <defs>
-    <linearGradient id="resLogoWarm" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" stop-color="#f59e0b" />
-      <stop offset="100%" stop-color="#ef4444" />
-    </linearGradient>
+    <radialGradient id="bgGrad" cx="50%" cy="45%" r="50%">
+      <stop offset="0%" stop-color="#2a1f1a" />
+      <stop offset="100%" stop-color="#1a120e" />
+    </radialGradient>
   </defs>
-  <circle cx="100" cy="100" r="92" fill="#1a120e" />
+  <!-- Dark brown circle background -->
+  <circle cx="100" cy="100" r="96" fill="url(#bgGrad)" />
+  <!-- Golden S letter -->
   <text
-    x="80"
-    y="130"
+    x="78"
+    y="135"
     text-anchor="middle"
-    font-family="system-ui,sans-serif"
-    font-size="100"
+    font-family="'Segoe UI','Helvetica Neue',Arial,sans-serif"
+    font-size="120"
     font-weight="800"
-    fill="url(#resLogoWarm)"
+    fill="#e8a830"
   >S</text>
+  <!-- Inner sound wave arc -->
   <path
-    d="M125,65 Q145,100 125,135"
+    d="M128,62 Q155,100 128,138"
     fill="none"
-    stroke="url(#resLogoWarm)"
-    stroke-width="4"
+    stroke="#e8a830"
+    stroke-width="7"
     stroke-linecap="round"
-    opacity="0.6"
   />
+  <!-- Outer sound wave arc -->
   <path
-    d="M140,52 Q165,100 140,148"
+    d="M148,46 Q182,100 148,154"
     fill="none"
-    stroke="url(#resLogoWarm)"
-    stroke-width="3"
+    stroke="#e8a830"
+    stroke-width="6.5"
     stroke-linecap="round"
-    opacity="0.35"
   />
 </svg>

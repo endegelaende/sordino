@@ -92,6 +92,9 @@ lern.md
 reports/
 screenshots/
 
+# Icon generation helper script
+assets/generate_icons.py
+
 # Auto-generated asset bundle for wheel builds (created by release workflow)
 # See .github/workflows/release.yml — copies share/jive/ → jive/_data/
 jive/_data/
