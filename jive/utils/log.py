@@ -130,10 +130,14 @@ class JiveLogger:
         # Set initial level
         self._logger.setLevel(level if level is not None else _default_level)
 
-    def debug(self, *args: object) -> None:
-        """Log a debug message. Arguments are concatenated (matching Lua behavior)."""
+    def debug(self, *args: object, **kwargs: object) -> None:
+        """Log a debug message.
+
+        Accepts ``exc_info=True`` and other keyword arguments supported
+        by the standard :meth:`logging.Logger.debug` method.
+        """
         if self._logger.isEnabledFor(logging.DEBUG):
-            self._logger.debug("%s", _concat_args(args), stacklevel=2)
+            self._logger.debug("%s", _concat_args(args), stacklevel=2, **kwargs)  # type: ignore[arg-type]
 
     def info(self, *args: object) -> None:
         """Log an info message."""

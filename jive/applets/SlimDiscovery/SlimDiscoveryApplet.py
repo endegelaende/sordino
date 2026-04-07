@@ -281,9 +281,7 @@ class SlimDiscoveryApplet(Applet):
             try:
                 cms = mgr.load_applet("ChooseMusicSource")
                 if cms is not None:
-                    cms_settings = (
-                        cms.get_settings() if hasattr(cms, "get_settings") else {}
-                    )
+                    cms_settings = cms.get_settings() if hasattr(cms, "get_settings") else {}
                     if "poll" in cms_settings:
                         self.poll = cms_settings["poll"]
             except Exception as exc:
@@ -499,12 +497,8 @@ class SlimDiscoveryApplet(Applet):
 
         for _id, server in list(SlimServer.iterate()):
             try:
-                is_conn = (
-                    server.is_connected() if hasattr(server, "is_connected") else False
-                )
-                last_seen = (
-                    server.get_last_seen() if hasattr(server, "get_last_seen") else now
-                )
+                is_conn = server.is_connected() if hasattr(server, "is_connected") else False
+                last_seen = server.get_last_seen() if hasattr(server, "get_last_seen") else now
 
                 if not is_conn and (now - last_seen) > DISCOVERY_TIMEOUT:
                     # Preserve last-known remote SC for WoL
@@ -549,9 +543,7 @@ class SlimDiscoveryApplet(Applet):
                     if hasattr(player, "get_slim_server")
                     else False
                 )
-                last_seen = (
-                    player.get_last_seen() if hasattr(player, "get_last_seen") else now
-                )
+                last_seen = player.get_last_seen() if hasattr(player, "get_last_seen") else now
 
                 if (
                     not has_server
@@ -643,9 +635,7 @@ class SlimDiscoveryApplet(Applet):
                 try:
                     self.timer.restart(0)
                 except Exception as exc:
-                    log.warning(
-                        "_set_state: failed to restart timer (same state): %s", exc
-                    )
+                    log.warning("_set_state: failed to restart timer (same state): %s", exc)
             return
 
         # Restart discovery if we were disconnected
@@ -653,9 +643,7 @@ class SlimDiscoveryApplet(Applet):
             try:
                 self.timer.restart(0)
             except Exception as exc:
-                log.warning(
-                    "_set_state: failed to restart timer (from disconnected): %s", exc
-                )
+                log.warning("_set_state: failed to restart timer (from disconnected): %s", exc)
 
         self.state = state
 
@@ -664,9 +652,7 @@ class SlimDiscoveryApplet(Applet):
                 try:
                     self.timer.stop()
                 except Exception as exc:
-                    log.warning(
-                        "_set_state: failed to stop timer (disconnected): %s", exc
-                    )
+                    log.warning("_set_state: failed to stop timer (disconnected): %s", exc)
             self._disconnect()
 
         elif state == "searching":
@@ -674,9 +660,7 @@ class SlimDiscoveryApplet(Applet):
                 try:
                     self.timer.restart(0)
                 except Exception as exc:
-                    log.warning(
-                        "_set_state: failed to restart timer (searching): %s", exc
-                    )
+                    log.warning("_set_state: failed to restart timer (searching): %s", exc)
             self._connect()
 
         elif state == "connected":
@@ -688,9 +672,7 @@ class SlimDiscoveryApplet(Applet):
                 try:
                     self.timer.restart(0)
                 except Exception as exc:
-                    log.warning(
-                        "_set_state: failed to restart timer (probing): %s", exc
-                    )
+                    log.warning("_set_state: failed to restart timer (probing): %s", exc)
             self._connect()
 
         if log.is_debug():
@@ -774,8 +756,10 @@ class SlimDiscoveryApplet(Applet):
             current = Player.get_current_player()
             if current is not player:
                 return
+            if current is None:
+                return
 
-            name = player.get_name() if hasattr(player, "get_name") else player
+            name = current.get_name() if hasattr(current, "get_name") else current
             log.info("connected %s", name)
 
             self._set_state("connected")
@@ -785,9 +769,7 @@ class SlimDiscoveryApplet(Applet):
         except Exception as exc:
             log.debug("notify_playerConnected error: %s", exc)
 
-    def notify_serverDisconnected(
-        self, slimserver: Any, num_user_requests: int
-    ) -> None:
+    def notify_serverDisconnected(self, slimserver: Any, num_user_requests: int) -> None:
         """Restart discovery if the current player's server disconnects."""
         log.debug("serverDisconnected %s", slimserver)
         try:
@@ -798,9 +780,7 @@ class SlimDiscoveryApplet(Applet):
                 return
 
             player_server = (
-                current.get_slim_server()
-                if hasattr(current, "get_slim_server")
-                else None
+                current.get_slim_server() if hasattr(current, "get_slim_server") else None
             )
             if player_server is not slimserver:
                 return
@@ -825,9 +805,7 @@ class SlimDiscoveryApplet(Applet):
                 return
 
             player_server = (
-                current.get_slim_server()
-                if hasattr(current, "get_slim_server")
-                else None
+                current.get_slim_server() if hasattr(current, "get_slim_server") else None
             )
             if player_server is not slimserver:
                 return
@@ -855,9 +833,7 @@ class SlimDiscoveryApplet(Applet):
                 current = Player.get_current_player()
                 if current is not None:
                     server = (
-                        current.get_slim_server()
-                        if hasattr(current, "get_slim_server")
-                        else None
+                        current.get_slim_server() if hasattr(current, "get_slim_server") else None
                     )
                     if server is not None:
                         server.disconnect()
@@ -913,9 +889,7 @@ class SlimDiscoveryApplet(Applet):
 
         # Player ID
         try:
-            player_id: Any = (
-                player.get_id() if (player and hasattr(player, "get_id")) else False
-            )
+            player_id: Any = player.get_id() if (player and hasattr(player, "get_id")) else False
         except Exception:
             player_id = False
 
@@ -936,16 +910,12 @@ class SlimDiscoveryApplet(Applet):
             try:
                 server = player.get_slim_server()
             except Exception as exc:
-                log.warning(
-                    "notify_playerCurrent: failed to get player's server: %s", exc
-                )
+                log.warning("notify_playerCurrent: failed to get player's server: %s", exc)
 
         if server:
             try:
                 server_init = server.get_init() if hasattr(server, "get_init") else None
-                server_ip = (
-                    server_init.get("ip") if isinstance(server_init, dict) else None
-                )
+                server_ip = server_init.get("ip") if isinstance(server_init, dict) else None
                 settings_ip = (
                     settings.get("serverInit", {}).get("ip")
                     if isinstance(settings.get("serverInit"), dict)
@@ -953,9 +923,7 @@ class SlimDiscoveryApplet(Applet):
                 )
                 ip_changed = server_ip != settings_ip
 
-                server_mac = (
-                    server_init.get("mac") if isinstance(server_init, dict) else None
-                )
+                server_mac = server_init.get("mac") if isinstance(server_init, dict) else None
                 settings_mac = (
                     settings.get("serverInit", {}).get("mac")
                     if isinstance(settings.get("serverInit"), dict)
@@ -964,9 +932,7 @@ class SlimDiscoveryApplet(Applet):
                 mac_changed = server_mac != settings_mac
 
                 is_sn = (
-                    server.is_squeeze_network()
-                    if hasattr(server, "is_squeeze_network")
-                    else False
+                    server.is_squeeze_network() if hasattr(server, "is_squeeze_network") else False
                 )
 
                 server_name = server.get_name() if hasattr(server, "get_name") else None
@@ -1029,9 +995,7 @@ class SlimDiscoveryApplet(Applet):
         try:
             self.store_settings()
         except Exception as exc:
-            log.error(
-                "notify_playerNewName: failed to store settings: %s", exc, exc_info=True
-            )
+            log.error("notify_playerNewName: failed to store settings: %s", exc, exc_info=True)
 
     # ------------------------------------------------------------------
     # Service methods
@@ -1093,9 +1057,7 @@ class SlimDiscoveryApplet(Applet):
 
             Player.set_current_player(player)
         except ImportError as exc:
-            log.error(
-                "setCurrentPlayer: Player module not available: %s", exc, exc_info=True
-            )
+            log.error("setCurrentPlayer: Player module not available: %s", exc, exc_info=True)
 
     def discoverPlayers(self) -> None:
         """Trigger player discovery (service method)."""
@@ -1212,19 +1174,11 @@ class SlimDiscoveryApplet(Applet):
         for _id, server in SlimServer.iterate():
             try:
                 name = server.get_name() if hasattr(server, "get_name") else "?"
-                ip_port = (
-                    server.get_ip_port() if hasattr(server, "get_ip_port") else "?"
-                )
-                connected = (
-                    server.is_connected() if hasattr(server, "is_connected") else "?"
-                )
-                last_seen = (
-                    server.get_last_seen() if hasattr(server, "get_last_seen") else now
-                )
+                ip_port = server.get_ip_port() if hasattr(server, "get_ip_port") else "?"
+                connected = server.is_connected() if hasattr(server, "is_connected") else "?"
+                last_seen = server.get_last_seen() if hasattr(server, "get_last_seen") else now
                 timeout = DISCOVERY_TIMEOUT - (now - last_seen)
-                version = (
-                    server.get_version() if hasattr(server, "get_version") else "?"
-                )
+                version = server.get_version() if hasattr(server, "get_version") else "?"
                 log.info(
                     "\t%s [%s] connected=%s timeout=%s version=%s",
                     name,
@@ -1242,20 +1196,10 @@ class SlimDiscoveryApplet(Applet):
                 name = player.get_name() if hasattr(player, "get_name") else "?"
                 pid = player.get_id() if hasattr(player, "get_id") else "?"
                 uuid = player.get_uuid() if hasattr(player, "get_uuid") else "?"
-                pserver = (
-                    player.get_slim_server()
-                    if hasattr(player, "get_slim_server")
-                    else "?"
-                )
-                connected = (
-                    player.is_connected() if hasattr(player, "is_connected") else "?"
-                )
-                available = (
-                    player.is_available() if hasattr(player, "is_available") else "?"
-                )
-                last_seen = (
-                    player.get_last_seen() if hasattr(player, "get_last_seen") else now
-                )
+                pserver = player.get_slim_server() if hasattr(player, "get_slim_server") else "?"
+                connected = player.is_connected() if hasattr(player, "is_connected") else "?"
+                available = player.is_available() if hasattr(player, "is_available") else "?"
+                last_seen = player.get_last_seen() if hasattr(player, "get_last_seen") else now
                 timeout = DISCOVERY_TIMEOUT - (now - last_seen)
                 log.info(
                     "\t%s [%s] uuid=%s server=%s connected=%s available=%s timeout=%s",

@@ -505,8 +505,11 @@ class SlimServer:
                 cur_player = PlayerCls.get_current_player()
                 if (
                     cur_player is not player
-                    or player.get_slim_server() is not self
-                    or player.is_connected() != _to_bool(player_info.get("connected"))
+                    or (player is not None and player.get_slim_server() is not self)
+                    or (
+                        player is not None
+                        and player.is_connected() != _to_bool(player_info.get("connected"))
+                    )
                 ):
                     player.update_player_info(
                         self,
