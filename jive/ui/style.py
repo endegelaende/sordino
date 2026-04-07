@@ -179,7 +179,7 @@ def _resolve_lazy(val: Dict[str, Any]) -> Any:
             return val
 
     except Exception as exc:
-        log.warning(
+        log.debug(
             "Failed to resolve lazy %s ref (%s): %s",
             ref_type,
             val.get("path") or val.get("paths", "?"),

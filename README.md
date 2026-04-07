@@ -323,6 +323,61 @@ export SDL_AUDIODRIVER=dummy
 
 ---
 
+## Raspberry Pi
+
+The Quick Start instructions work as-is on **Raspberry Pi OS Desktop** (RPi4 / RPi5).
+A few extra notes for common Pi-specific scenarios:
+
+### SSH vs Local Terminal
+
+If you launch `sordino` over SSH, pygame cannot open a display window. Run from
+the Pi's **local desktop terminal** or a **VNC session** instead.
+
+If you must launch from SSH, export the display first:
+
+```bash
+DISPLAY=:0 sordino
+```
+
+### Wayland (Bookworm Default)
+
+Raspberry Pi OS Bookworm uses **Wayland (labwc)** by default. If `DISPLAY=:0`
+doesn't work, tell SDL2 which video backend to use:
+
+```bash
+# Try Wayland first
+SDL_VIDEODRIVER=wayland sordino
+
+# Fall back to X11 (XWayland)
+SDL_VIDEODRIVER=x11 sordino
+```
+
+Check which session type is active:
+
+```bash
+echo $XDG_SESSION_TYPE
+# prints "wayland" or "x11"
+```
+
+### Quick Pygame Sanity Test
+
+Verify that SDL2 can open a display on your Pi:
+
+```bash
+python3 -c "import pygame; pygame.init(); s = pygame.display.set_mode((320,240)); print('Display OK:', pygame.display.get_driver())"
+```
+
+If this prints `Display OK: ...` without errors, `sordino` will work.
+
+### Autostart (Kiosk-Style)
+
+For unattended setups, add `sordino` to your session's autostart:
+
+- **Wayland (labwc):** add to `~/.config/wayfire.ini`
+- **X11 (LXDE):** add to `~/.config/lxsession/LXDE-pi/autostart`
+
+---
+
 ## Project Structure
 
 ```

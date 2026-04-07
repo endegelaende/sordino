@@ -709,7 +709,7 @@ class SimpleMenu(Menu):
 
             # Resolve icon / check / arrow — fall back to per-slot defaults
             icon = data_item.get("icon") or self._default_icons[offset]
-            icon_style = data_item.get("iconStyle", "icon")
+            icon_style = data_item.get("iconStyle") or "icon"
             if hasattr(icon, "set_style"):
                 icon.set_style(icon_style)
             elif hasattr(icon, "setStyle"):

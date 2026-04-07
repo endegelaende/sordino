@@ -44,6 +44,7 @@ from __future__ import annotations
 import math
 import os
 import random
+import sys
 import time
 from typing import (
     TYPE_CHECKING,
@@ -287,7 +288,7 @@ class JiveMain:
         self._init_home_menu()
 
         # --- Load applets and skin ---
-        if init_ui:
+        if self._init_ui:
             self.reload()
 
             # Show the home menu window
@@ -295,7 +296,7 @@ class JiveMain:
                 self.window.show()
 
         # --- Run the event loop ---
-        if run_event_loop and init_ui:
+        if run_event_loop and self._init_ui:
             self._run_event_loop()
 
     # ------------------------------------------------------------------
@@ -345,10 +346,23 @@ class JiveMain:
         try:
             from jive.ui.framework import framework
 
+            video_driver = os.environ.get("SDL_VIDEODRIVER", "(system default)")
+            log.info("SDL video driver: %s", video_driver)
+
             framework.init()
             self._framework = framework
         except Exception as exc:
             log.warn("Could not initialize UI framework: %s", exc)
+            print(
+                f"\nERROR: Could not open display — {exc}\n"
+                "\n"
+                "Possible fixes:\n"
+                "  • If you are using SSH, run from the RPi's local desktop terminal instead.\n"
+                "  • Or set DISPLAY=:0  before launching (e.g.  DISPLAY=:0 sordino).\n"
+                "  • On Wayland sessions, try:  SDL_VIDEODRIVER=wayland sordino\n"
+                "  • For headless/CI use:  sordino --headless\n",
+                file=sys.stderr,
+            )
             self._init_ui = False
 
     def _init_network_thread(self) -> None:
@@ -1223,7 +1237,12 @@ class JiveMain:
         """Run the main framework event loop (blocking)."""
         if self._framework is None:
             log.error("Cannot run event loop: Framework not initialized")
-            return
+            print(
+                "\nERROR: No display available — exiting. "
+                "Run 'sordino --headless' for headless mode.\n",
+                file=sys.stderr,
+            )
+            sys.exit(1)
 
         # Set up the splash timer / handler
         self._framework.set_update_screen(False)

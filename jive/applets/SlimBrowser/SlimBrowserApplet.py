@@ -4413,7 +4413,7 @@ class SlimBrowserApplet(Applet):
             if hasattr(player, "getVolume"):
                 vol = player.getVolume()
             self.cached_volume = vol
-            log.warn("set volume to 100, cached previous: %s", self.cached_volume)
+            log.info("set volume to 100, cached previous: %s", self.cached_volume)
 
             if hasattr(player, "isLocal") and player.isLocal():
                 if hasattr(player, "volumeLocal"):
@@ -4422,7 +4422,7 @@ class SlimBrowserApplet(Applet):
                 player.volume(100, True)
 
         elif self.cached_volume is not None:
-            log.warn("reset volume to cached level: %s", self.cached_volume)
+            log.info("reset volume to cached level: %s", self.cached_volume)
             if hasattr(player, "isLocal") and player.isLocal():
                 if hasattr(player, "volumeLocal"):
                     player.volumeLocal(self.cached_volume)

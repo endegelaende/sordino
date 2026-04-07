@@ -82,6 +82,7 @@ trace_*.py
 
 # Session / agent context files (AI-generated)
 # KONTEXT.md is tracked — don't ignore it
+CLAUDE.md
 AGENT_TASKS.md
 INSTRUCTION.md
 lern.md

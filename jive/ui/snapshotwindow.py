@@ -132,7 +132,7 @@ class SnapshotWindow(Window):
             fw.draw(img)  # type: ignore[attr-defined]
             return img
         except Exception:
-            log.warning("SnapshotWindow._capture failed", exc_info=True)
+            log.debug("SnapshotWindow._capture failed", exc_info=True)
             return None
 
     # ------------------------------------------------------------------
