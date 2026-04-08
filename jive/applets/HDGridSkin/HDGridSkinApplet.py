@@ -342,16 +342,10 @@ class HDGridSkinApplet(Applet):
         nowPlayingButton = _tile_image(imgpath + "Icons/icon_nplay_button_tb.png")
         playlistButton = _tile_image(imgpath + "Icons/icon_nplay_list_tb.png")
         moreButton = _tile_image(imgpath + "Icons/icon_more_tb.png")
-        touchToolbarBackground = _tile_image(
-            imgpath + "Touch_Toolbar/toolbar_tch_bkgrd.png"
-        )
+        touchToolbarBackground = _tile_image(imgpath + "Touch_Toolbar/toolbar_tch_bkgrd.png")
         sliderBackground = _tile_image(imgpath + "Touch_Toolbar/toolbar_lrg.png")
-        touchToolbarKeyDivider = _tile_image(
-            imgpath + "Touch_Toolbar/toolbar_divider.png"
-        )
-        deleteKeyBackground = _tile_image(
-            imgpath + "Buttons/button_delete_text_entry.png"
-        )
+        touchToolbarKeyDivider = _tile_image(imgpath + "Touch_Toolbar/toolbar_divider.png")
+        deleteKeyBackground = _tile_image(imgpath + "Buttons/button_delete_text_entry.png")
         deleteKeyPressedBackground = _tile_image(
             imgpath + "Buttons/button_delete_text_entry_press.png"
         )
@@ -360,9 +354,7 @@ class HDGridSkinApplet(Applet):
         # HD uses its own image sub-directory structure
 
         blackBackground = _fill_color(0x000000FF)
-        nocturneWallpaper = _tile_image(
-            "applets/SetupWallpaper/wallpaper/fab4_nocturne.png"
-        )
+        nocturneWallpaper = _tile_image("applets/SetupWallpaper/wallpaper/fab4_nocturne.png")
 
         fiveItemBox = _tile_htiles(
             [
@@ -393,9 +385,7 @@ class HDGridSkinApplet(Applet):
                 imgpath + "3_line_lists/menu_sel_box_3line_r.png",
             ]
         )
-        threeItemPressedBox = _tile_image(
-            imgpath + "3_line_lists/menu_sel_box_3item_press.png"
-        )
+        threeItemPressedBox = _tile_image(imgpath + "3_line_lists/menu_sel_box_3item_press.png")
 
         contextMenuPressedBox = _tile_9patch(
             [
@@ -513,9 +503,7 @@ class HDGridSkinApplet(Applet):
 
         popupBackground = _fill_color(0x000000FF)
 
-        textinputCursor = _tile_image(
-            imgpath + "Text_Entry/Keyboard_Touch/tch_cursor.png"
-        )
+        textinputCursor = _tile_image(imgpath + "Text_Entry/Keyboard_Touch/tch_cursor.png")
 
         # ---------------------------------------------------------------
         # Constants
@@ -599,9 +587,7 @@ class HDGridSkinApplet(Applet):
         # ---------------------------------------------------------------
         # Progress bar references
         # ---------------------------------------------------------------
-        _progressBackground = _tile_image(
-            imgpath + "Alerts/alert_progress_bar_bkgrd.png"
-        )
+        _progressBackground = _tile_image(imgpath + "Alerts/alert_progress_bar_bkgrd.png")
         _progressBar = _tile_htiles(
             [
                 None,
@@ -1373,24 +1359,9 @@ class HDGridSkinApplet(Applet):
             "hidden": 1,
         }
 
-        # Playmode icons
-        s["_button_playmode"] = _uses(_iconbar_icon)
-        s["button_playmode_OFF"] = _uses(
-            s["_button_playmode"],
-            {"img": _load_image("Icons/icon_toolbar_play_off.png")},
-        )
-        s["button_playmode_STOP"] = _uses(
-            s["_button_playmode"],
-            {"img": _load_image("Icons/icon_toolbar_stop.png")},
-        )
-        s["button_playmode_PLAY"] = _uses(
-            s["_button_playmode"],
-            {"img": _load_image("Icons/icon_toolbar_play.png")},
-        )
-        s["button_playmode_PAUSE"] = _uses(
-            s["_button_playmode"],
-            {"img": _load_image("Icons/icon_toolbar_pause.png")},
-        )
+        # NOTE: HDGridSkin intentionally omits button_playmode_* definitions.
+        # HD skins are designed for TV/monitor + remote control, showing
+        # only repeat and shuffle controls (matching the Lua original).
 
         # Repeat icons
         s["_button_repeat"] = _uses(_iconbar_icon)
@@ -1811,9 +1782,7 @@ class HDGridSkinApplet(Applet):
             },
         )
 
-        s["nowplaying"]["npprogressNB"]["elapsedSmall"] = s["nowplaying"][
-            "npprogressNB"
-        ]["elapsed"]
+        s["nowplaying"]["npprogressNB"]["elapsedSmall"] = s["nowplaying"]["npprogressNB"]["elapsed"]
 
         # Art only NowPlaying style
         s["nowplaying_art_only"] = _uses(

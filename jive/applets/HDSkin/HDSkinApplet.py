@@ -339,16 +339,10 @@ class HDSkinApplet(Applet):
         nowPlayingButton = _tile_image(imgpath + "Icons/icon_nplay_button_tb.png")
         playlistButton = _tile_image(imgpath + "Icons/icon_nplay_list_tb.png")
         moreButton = _tile_image(imgpath + "Icons/icon_more_tb.png")
-        touchToolbarBackground = _tile_image(
-            imgpath + "Touch_Toolbar/toolbar_tch_bkgrd.png"
-        )
+        touchToolbarBackground = _tile_image(imgpath + "Touch_Toolbar/toolbar_tch_bkgrd.png")
         sliderBackground = _tile_image(imgpath + "Touch_Toolbar/toolbar_lrg.png")
-        touchToolbarKeyDivider = _tile_image(
-            imgpath + "Touch_Toolbar/toolbar_divider.png"
-        )
-        deleteKeyBackground = _tile_image(
-            imgpath + "Buttons/button_delete_text_entry.png"
-        )
+        touchToolbarKeyDivider = _tile_image(imgpath + "Touch_Toolbar/toolbar_divider.png")
+        deleteKeyBackground = _tile_image(imgpath + "Buttons/button_delete_text_entry.png")
         deleteKeyPressedBackground = _tile_image(
             imgpath + "Buttons/button_delete_text_entry_press.png"
         )
@@ -357,9 +351,7 @@ class HDSkinApplet(Applet):
         # HD uses its own image sub-directory structure
 
         blackBackground = _fill_color(0x000000FF)
-        nocturneWallpaper = _tile_image(
-            "applets/SetupWallpaper/wallpaper/fab4_nocturne.png"
-        )
+        nocturneWallpaper = _tile_image("applets/SetupWallpaper/wallpaper/fab4_nocturne.png")
 
         fiveItemBox = _tile_htiles(
             [
@@ -390,9 +382,7 @@ class HDSkinApplet(Applet):
                 imgpath + "3_line_lists/menu_sel_box_3line_r.png",
             ]
         )
-        threeItemPressedBox = _tile_image(
-            imgpath + "3_line_lists/menu_sel_box_3item_press.png"
-        )
+        threeItemPressedBox = _tile_image(imgpath + "3_line_lists/menu_sel_box_3item_press.png")
 
         contextMenuPressedBox = _tile_9patch(
             [
@@ -510,9 +500,7 @@ class HDSkinApplet(Applet):
 
         popupBackground = _fill_color(0x000000FF)
 
-        textinputCursor = _tile_image(
-            imgpath + "Text_Entry/Keyboard_Touch/tch_cursor.png"
-        )
+        textinputCursor = _tile_image(imgpath + "Text_Entry/Keyboard_Touch/tch_cursor.png")
 
         # ---------------------------------------------------------------
         # Constants
@@ -596,9 +584,7 @@ class HDSkinApplet(Applet):
         # ---------------------------------------------------------------
         # Progress bar references
         # ---------------------------------------------------------------
-        _progressBackground = _tile_image(
-            imgpath + "Alerts/alert_progress_bar_bkgrd.png"
-        )
+        _progressBackground = _tile_image(imgpath + "Alerts/alert_progress_bar_bkgrd.png")
         _progressBar = _tile_htiles(
             [
                 None,
@@ -938,9 +924,7 @@ class HDSkinApplet(Applet):
             "item_play": _uses(s["pressed"]["item_play"], {"arrow": smallSpinny}),
             "item_add": _uses(s["pressed"]["item_add"], {"arrow": smallSpinny}),
             "item_no_arrow": _uses(s["item_no_arrow"], {"arrow": smallSpinny}),
-            "item_checked_no_arrow": _uses(
-                s["item_checked_no_arrow"], {"arrow": smallSpinny}
-            ),
+            "item_checked_no_arrow": _uses(s["item_checked_no_arrow"], {"arrow": smallSpinny}),
             "item_info": _uses(s["item_info"], {"arrow": smallSpinny}),
         }
 
@@ -1185,12 +1169,8 @@ class HDSkinApplet(Applet):
             {
                 "hour": {"border": [_timeFirstColumnX24h, TITLE_HEIGHT, 0, 0]},
                 "minute": {"border": [_timeFirstColumnX24h + 75, TITLE_HEIGHT, 0, 0]},
-                "hourUnselected": {
-                    "border": [_timeFirstColumnX24h, TITLE_HEIGHT, 0, 0]
-                },
-                "minuteUnselected": {
-                    "border": [_timeFirstColumnX24h + 75, TITLE_HEIGHT, 0, 0]
-                },
+                "hourUnselected": {"border": [_timeFirstColumnX24h, TITLE_HEIGHT, 0, 0]},
+                "minuteUnselected": {"border": [_timeFirstColumnX24h + 75, TITLE_HEIGHT, 0, 0]},
             },
         )
 
@@ -1835,24 +1815,9 @@ class HDSkinApplet(Applet):
             "hidden": 1,
         }
 
-        # Playmode icons
-        s["_button_playmode"] = _uses(_iconbar_icon)
-        s["button_playmode_OFF"] = _uses(
-            s["_button_playmode"],
-            {"img": _load_image("Icons/icon_toolbar_play_off.png")},
-        )
-        s["button_playmode_STOP"] = _uses(
-            s["_button_playmode"],
-            {"img": _load_image("Icons/icon_toolbar_stop.png")},
-        )
-        s["button_playmode_PLAY"] = _uses(
-            s["_button_playmode"],
-            {"img": _load_image("Icons/icon_toolbar_play.png")},
-        )
-        s["button_playmode_PAUSE"] = _uses(
-            s["_button_playmode"],
-            {"img": _load_image("Icons/icon_toolbar_pause.png")},
-        )
+        # NOTE: HDSkin intentionally omits button_playmode_* definitions.
+        # HD skins are designed for TV/monitor + remote control, showing
+        # only repeat and shuffle controls (matching the Lua original).
 
         # Repeat icons
         s["_button_repeat"] = _uses(_iconbar_icon)
@@ -2227,18 +2192,10 @@ class HDSkinApplet(Applet):
 
         # Wireless indicator icons (Lua L2548-2572)
         _indicator = {"align": "center"}
-        s["wirelessLevel1"] = _uses(
-            _indicator, {"img": _load_image("Icons/icon_wireless_1.png")}
-        )
-        s["wirelessLevel2"] = _uses(
-            _indicator, {"img": _load_image("Icons/icon_wireless_2.png")}
-        )
-        s["wirelessLevel3"] = _uses(
-            _indicator, {"img": _load_image("Icons/icon_wireless_3.png")}
-        )
-        s["wirelessLevel4"] = _uses(
-            _indicator, {"img": _load_image("Icons/icon_wireless_4.png")}
-        )
+        s["wirelessLevel1"] = _uses(_indicator, {"img": _load_image("Icons/icon_wireless_1.png")})
+        s["wirelessLevel2"] = _uses(_indicator, {"img": _load_image("Icons/icon_wireless_2.png")})
+        s["wirelessLevel3"] = _uses(_indicator, {"img": _load_image("Icons/icon_wireless_3.png")})
+        s["wirelessLevel4"] = _uses(_indicator, {"img": _load_image("Icons/icon_wireless_4.png")})
         s["wirelessDisabled"] = _uses(
             _indicator, {"img": _load_image("Icons/icon_wireless_disabled.png")}
         )
@@ -2296,10 +2253,7 @@ class HDSkinApplet(Applet):
         controlWidth = 100
         buttonPadding = 0
 
-        coverSize = (
-            int(min(screen_height - TITLE_HEIGHT - 20, screen_width / 2 - 50) // 10)
-            * 10
-        )
+        coverSize = int(min(screen_height - TITLE_HEIGHT - 20, screen_width / 2 - 50) // 10) * 10
 
         # _tracklayout — absolute positioning, right of cover art
         _track_x = coverSize + int(100 * screen_width / 1920)
@@ -2456,9 +2410,7 @@ class HDSkinApplet(Applet):
                     "shuffleAlbum": _uses(
                         _transportControlButton,
                         {
-                            "img": _load_image(
-                                "Icons/icon_toolbar_shuffle_album_on.png"
-                            ),
+                            "img": _load_image("Icons/icon_toolbar_shuffle_album_on.png"),
                         },
                     ),
                     "repeatMode": _uses(
@@ -2574,19 +2526,13 @@ class HDSkinApplet(Applet):
             },
         )
 
-        s["nowplaying"]["npprogressNB"]["elapsedSmall"] = s["nowplaying"][
-            "npprogressNB"
-        ]["elapsed"]
+        s["nowplaying"]["npprogressNB"]["elapsedSmall"] = s["nowplaying"]["npprogressNB"]["elapsed"]
 
         # Pressed states
         s["nowplaying"]["pressed"] = s["nowplaying"]
         s["nowplaying"]["nptitle"]["pressed"] = _uses(s["nowplaying"]["nptitle"])
-        s["nowplaying"]["npalbumgroup"]["pressed"] = _uses(
-            s["nowplaying"]["npalbumgroup"]
-        )
-        s["nowplaying"]["npartistgroup"]["pressed"] = _uses(
-            s["nowplaying"]["npartistgroup"]
-        )
+        s["nowplaying"]["npalbumgroup"]["pressed"] = _uses(s["nowplaying"]["npalbumgroup"])
+        s["nowplaying"]["npartistgroup"]["pressed"] = _uses(s["nowplaying"]["npartistgroup"])
         s["nowplaying"]["npartwork"]["pressed"] = s["nowplaying"]["npartwork"]
         s["nowplaying"]["npcontrols"]["pressed"] = {"hidden": 1}
 
@@ -2738,9 +2684,7 @@ class HDSkinApplet(Applet):
             ),
         }
         s["brightness_group"]["pressed"] = {
-            "down": _uses(
-                s["brightness_group"]["down"], {"bgImg": sliderButtonPressed}
-            ),
+            "down": _uses(s["brightness_group"]["down"], {"bgImg": sliderButtonPressed}),
             "up": _uses(s["brightness_group"]["up"], {"bgImg": sliderButtonPressed}),
         }
 
@@ -2856,9 +2800,7 @@ class HDSkinApplet(Applet):
             "zOrder": 99,
         }
         s["badge_none"] = _uses(_badge, {"img": False})
-        s["badge_favorite"] = _uses(
-            _badge, {"img": _load_image("Icons/icon_badge_fav.png")}
-        )
+        s["badge_favorite"] = _uses(_badge, {"img": _load_image("Icons/icon_badge_fav.png")})
         s["badge_add"] = _uses(_badge, {"img": _load_image("Icons/icon_badge_add.png")})
 
         # ---------------------------------------------------------------

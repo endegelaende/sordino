@@ -290,9 +290,7 @@ class WQVGAlargeSkinApplet(Applet):
                 if sw > 0 and sh > 0:
                     screen_width, screen_height = sw, sh
         except Exception as exc:
-            log.warning(
-                "WQVGAlargeSkin: failed to set initial video mode (480x272): %s", exc
-            )
+            log.warning("WQVGAlargeSkin: failed to set initial video mode (480x272): %s", exc)
 
         if use_default_size:
             screen_width = 480
@@ -335,22 +333,16 @@ class WQVGAlargeSkinApplet(Applet):
         nowPlayingButton = _tile_image(imgpath + "Icons/icon_nplay_button_tb.png")
         powerButton = _tile_image(imgpath + "Icons/icon_power_button_tb.png")
         sliderBackground = _tile_image(imgpath + "Touch_Toolbar/toolbar_lrg.png")
-        touchToolbarKeyDivider = _tile_image(
-            imgpath + "Touch_Toolbar/toolbar_divider.png"
-        )
+        touchToolbarKeyDivider = _tile_image(imgpath + "Touch_Toolbar/toolbar_divider.png")
 
-        deleteKeyBackground = _tile_image(
-            imgpath + "Buttons/button_delete_text_entry.png"
-        )
+        deleteKeyBackground = _tile_image(imgpath + "Buttons/button_delete_text_entry.png")
         deleteKeyPressedBackground = _tile_image(
             imgpath + "Buttons/button_delete_text_entry_press.png"
         )
         helpTextBackground = _tile_image(imgpath + "Titlebar/tbar_dropdwn_bkrgd.png")
 
         blackBackground = _fill_color(0x000000FF)
-        nocturneWallpaper = _tile_image(
-            "applets/SetupWallpaper/wallpaper/fab4_nocturne.png"
-        )
+        nocturneWallpaper = _tile_image("applets/SetupWallpaper/wallpaper/fab4_nocturne.png")
 
         # WQVGAlarge uses 3-line items as the primary list style
         threeItemSelectionBox = _tile_htiles(
@@ -360,9 +352,7 @@ class WQVGAlargeSkinApplet(Applet):
                 imgpath + "3_line_lists/menu_sel_box_3line_r.png",
             ]
         )
-        threeItemPressedBox = _tile_image(
-            imgpath + "3_line_lists/menu_sel_box_3item_press.png"
-        )
+        threeItemPressedBox = _tile_image(imgpath + "3_line_lists/menu_sel_box_3item_press.png")
 
         threeItemBox = _tile_htiles(
             [
@@ -488,9 +478,7 @@ class WQVGAlargeSkinApplet(Applet):
 
         popupBackground = _fill_color(0x000000FF)
 
-        textinputCursor = _tile_image(
-            imgpath + "Text_Entry/Keyboard_Touch/tch_cursor.png"
-        )
+        textinputCursor = _tile_image(imgpath + "Text_Entry/Keyboard_Touch/tch_cursor.png")
 
         # ---------------------------------------------------------------
         # Constants
@@ -572,9 +560,7 @@ class WQVGAlargeSkinApplet(Applet):
         # ---------------------------------------------------------------
         # Progress bar references
         # ---------------------------------------------------------------
-        _progressBackground = _tile_image(
-            imgpath + "Alerts/alert_progress_bar_bkgrd.png"
-        )
+        _progressBackground = _tile_image(imgpath + "Alerts/alert_progress_bar_bkgrd.png")
         _progressBar = _tile_htiles(
             [
                 None,
@@ -1274,9 +1260,7 @@ class WQVGAlargeSkinApplet(Applet):
                             },
                             "arrow": {
                                 "align": ITEM_ICON_ALIGN,
-                                "img": _load_image(
-                                    "Icons/selection_right_3line_on.png"
-                                ),
+                                "img": _load_image("Icons/selection_right_3line_on.png"),
                                 "padding": [0, 0, 0, 0],
                             },
                         },
@@ -1348,24 +1332,9 @@ class WQVGAlargeSkinApplet(Applet):
             "hidden": 1,
         }
 
-        # Playmode icons
-        s["_button_playmode"] = _uses(_iconbar_icon)
-        s["button_playmode_OFF"] = _uses(
-            s["_button_playmode"],
-            {"img": _load_image("Icons/icon_toolbar_play_off.png")},
-        )
-        s["button_playmode_STOP"] = _uses(
-            s["_button_playmode"],
-            {"img": _load_image("Icons/icon_toolbar_stop.png")},
-        )
-        s["button_playmode_PLAY"] = _uses(
-            s["_button_playmode"],
-            {"img": _load_image("Icons/icon_toolbar_play.png")},
-        )
-        s["button_playmode_PAUSE"] = _uses(
-            s["_button_playmode"],
-            {"img": _load_image("Icons/icon_toolbar_pause.png")},
-        )
+        # NOTE: WQVGAlargeSkin intentionally omits button_playmode_*
+        # definitions.  The iconbar is hidden on WQVGA hardware (SB Radio /
+        # SB Controller use physical buttons).  Matches the Lua original.
 
         # Repeat icons
         s["_button_repeat"] = _uses(_iconbar_icon)
@@ -1786,9 +1755,7 @@ class WQVGAlargeSkinApplet(Applet):
             },
         )
 
-        s["nowplaying"]["npprogressNB"]["elapsedSmall"] = s["nowplaying"][
-            "npprogressNB"
-        ]["elapsed"]
+        s["nowplaying"]["npprogressNB"]["elapsedSmall"] = s["nowplaying"]["npprogressNB"]["elapsed"]
 
         # Art only NowPlaying style
         s["nowplaying_art_only"] = _uses(
