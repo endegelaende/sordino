@@ -1435,10 +1435,10 @@ class Window(Widget):
         delayed: bool = False,
     ) -> None:
         """
-        Map a hardware/soft-button to named actions.
+        Map a hardware/soft-button to named actions and install the
+        corresponding button widget in the title bar.
 
-        In the Lua original this configures the left/right title-bar
-        buttons to fire specific actions on press, hold, and long-hold.
+        Mirrors Lua ``Window:setButtonAction()`` in Window.lua L888-892.
 
         Parameters
         ----------
@@ -1453,12 +1453,6 @@ class Window(Widget):
         delayed : bool
             If ``True``, delay applying the button action (used to
             avoid accidental activation during rapid navigation).
-
-        Notes
-        -----
-        This is currently a stub that stores the mapping but does not
-        yet wire it to actual button widgets.  Full implementation
-        requires the title-bar button widgets (not yet ported).
         """
         if not hasattr(self, "_button_actions"):
             self._button_actions: Dict[str, Any] = {}
@@ -1470,7 +1464,147 @@ class Window(Widget):
             "delayed": delayed,
         }
 
+        # Create the actual button widget and install it in the title bar
+        btn_widget = self.create_button_action_button(
+            press_action, hold_action, long_hold_action, True
+        )
+        if btn_widget is not None:
+            self.set_icon_widget(button, btn_widget)
+
     setButtonAction = set_button_action
+
+    # ------------------------------------------------------------------
+    # Title-bar button factory methods
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def create_button_action_button(
+        press_action: Optional[str] = None,
+        hold_action: Optional[str] = None,
+        long_hold_action: Optional[str] = None,
+        is_default: bool = False,
+    ) -> Any:
+        """
+        Create a title-bar button widget for the given actions.
+
+        Mirrors Lua ``Window:createButtonActionButton()`` in
+        Window.lua L894-935.  Translates the press action name to
+        determine the button style (e.g. ``"title_left_press"`` →
+        ``"back"`` → style ``"button_back"``), creates a Group with
+        that style containing an icon, and wraps it in a Button with
+        press/hold/longhold callbacks.
+
+        Parameters
+        ----------
+        press_action : str or None
+            Action name for press (e.g. ``"title_left_press"``).
+        hold_action : str or None
+            Action name for hold (e.g. ``"title_left_hold"``).
+        long_hold_action : str or None
+            Action name for long-hold (e.g. ``"soft_reset"``).
+        is_default : bool
+            Whether this is a default button group (stored on the
+            Button instance for later reference).
+
+        Returns
+        -------
+        Button or None
+            A Button wrapping a styled Group, or ``None`` on error.
+        """
+        from jive.ui.button import Button as BtnWidget
+        from jive.ui.constants import EVENT_CONSUME
+        from jive.ui.framework import framework as fw
+        from jive.ui.group import Group
+        from jive.ui.icon import Icon
+        from jive.ui.label import Label
+
+        # Determine style from the action translation table
+        # e.g. "title_left_press" → "back", "title_right_press" → "go_now_playing"
+        action_style: str = "none"
+        if press_action and fw is not None:
+            translated = fw.get_action_to_action_translation(press_action)
+            if translated and translated != "disabled":
+                action_style = translated
+            elif translated is None or translated == "disabled":
+                action_style = "none"
+
+        # Build callbacks that push the action into the framework
+        press_func: Optional[Callable[[], int]] = None
+        hold_func: Optional[Callable[[], int]] = None
+        long_hold_func: Optional[Callable[[], int]] = None
+
+        if press_action:
+            _pa = press_action
+
+            def press_func() -> int:
+                if fw is not None:
+                    fw.push_action(_pa)
+                return int(EVENT_CONSUME)
+
+        if hold_action:
+            _ha = hold_action
+
+            def hold_func() -> int:
+                if fw is not None:
+                    fw.push_action(_ha)
+                return int(EVENT_CONSUME)
+
+        if long_hold_action:
+            _la = long_hold_action
+
+            def long_hold_func() -> int:
+                if fw is not None:
+                    fw.push_action(_la)
+                return int(EVENT_CONSUME)
+
+        # Create the group with the button style
+        group = Group(
+            "button_" + action_style,
+            {
+                "icon": Icon("icon"),
+                "icon_text": Label("text", ""),
+            },
+        )
+
+        # Wrap in a Button (installs mouse listeners)
+        btn = BtnWidget(group, press_func, hold_func, long_hold_func)
+        btn.isDefaultButtonGroup = is_default  # type: ignore[attr-defined]
+
+        return btn
+
+    createButtonActionButton = create_button_action_button
+
+    @staticmethod
+    def create_default_left_button() -> Any:
+        """
+        Create the default left title-bar button.
+
+        Mirrors Lua ``Window:createDefaultLeftButton()`` (Window.lua
+        L874-878).  By default maps to ``title_left_press`` /
+        ``title_left_hold`` / ``soft_reset``, which typically
+        translates to a "back" button.
+        """
+        return Window.create_button_action_button(
+            "title_left_press", "title_left_hold", "soft_reset", True
+        )
+
+    createDefaultLeftButton = create_default_left_button
+
+    @staticmethod
+    def create_default_right_button() -> Any:
+        """
+        Create the default right title-bar button.
+
+        Mirrors Lua ``Window:createDefaultRightButton()`` (Window.lua
+        L880-883).  By default maps to ``title_right_press`` /
+        ``title_right_hold`` / ``soft_reset``, which typically
+        translates to a "go_now_playing" button.
+        """
+        return Window.create_button_action_button(
+            "title_right_press", "title_right_hold", "soft_reset", True
+        )
+
+    createDefaultRightButton = create_default_right_button
 
     # ==================================================================
     # Mouse focus

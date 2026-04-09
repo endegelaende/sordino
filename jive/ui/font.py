@@ -180,9 +180,11 @@ class Font:
         try:
             pg_font = pygame.freetype.Font(str(font_path), size)
         except Exception as exc:
-            raise RuntimeError(
-                f"Failed to load font '{name}' at size {size}: {exc}"
-            ) from exc
+            raise RuntimeError(f"Failed to load font '{name}' at size {size}: {exc}") from exc
+
+        # Enable kerning to match SDL_ttf (used by JiveLite) which has
+        # kerning ON by default.  pygame.freetype defaults to OFF.
+        pg_font.kerning = True
 
         # --- Compute metrics (matches load_ttf_font in jive_font.c) ---
 
