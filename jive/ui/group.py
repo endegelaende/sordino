@@ -93,6 +93,7 @@ class Group(Widget):
         "_orientation",
         "_mouse_event_focus_widget",
         "_type",
+        "is_default_button_group",
     )
 
     def __init__(self, style: str, widgets: Optional[Dict[str, Widget]] = None) -> None:
@@ -103,6 +104,12 @@ class Group(Widget):
 
         # Track item type for checkbox/radio/choice state in _decorated_label
         self._type: Optional[str] = None
+
+        # Flag for default button group identification.
+        # In Lua, Button.__init__ returns the widget itself and arbitrary
+        # attributes can be set on Lua tables.  In Python, Group uses
+        # __slots__, so we declare the slot explicitly.
+        self.is_default_button_group: bool = False
 
         self.widgets: Dict[str, Widget] = widgets if widgets is not None else {}
 

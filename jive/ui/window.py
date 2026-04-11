@@ -1508,8 +1508,9 @@ class Window(Widget):
 
         Returns
         -------
-        Button or None
-            A Button wrapping a styled Group, or ``None`` on error.
+        Group or None
+            A styled Group with mouse listeners installed, or ``None``
+            on error.
         """
         from jive.ui.button import Button as BtnWidget
         from jive.ui.constants import EVENT_CONSUME
@@ -1566,11 +1567,14 @@ class Window(Widget):
             },
         )
 
-        # Wrap in a Button (installs mouse listeners)
-        btn = BtnWidget(group, press_func, hold_func, long_hold_func)
-        btn.isDefaultButtonGroup = is_default  # type: ignore[attr-defined]
+        # Wrap in a Button — this installs mouse listeners on the group.
+        # In Lua, Button.__init__ returns the widget itself; in Python
+        # Button is a separate wrapper.  We return the *group* (a real
+        # Widget) so it can be stored via set_icon_widget().
+        BtnWidget(group, press_func, hold_func, long_hold_func)
+        group.is_default_button_group = is_default
 
-        return btn
+        return group
 
     createButtonActionButton = create_button_action_button
 
