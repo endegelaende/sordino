@@ -197,9 +197,7 @@ class HomeMenu:
         # "go_home" scrolls to root if already at home, else lets
         # the standard action handler take over
         self.window.add_action_listener("go_home", self, _home_root_handler)
-        self.window.add_action_listener(
-            "go_home_or_now_playing", self, _home_root_handler
-        )
+        self.window.add_action_listener("go_home_or_now_playing", self, _home_root_handler)
 
         # Power button mapping (delayed to avoid accidental activation)
         self.window.set_button_action(
@@ -310,9 +308,7 @@ class HomeMenu:
     # Complex weight
     # ------------------------------------------------------------------
 
-    def get_complex_weight(
-        self, item_id: str, item: MenuItemDict
-    ) -> Union[int, float, str]:
+    def get_complex_weight(self, item_id: str, item: MenuItemDict) -> Union[int, float, str]:
         """
         Compute a complex (hierarchical) weight for *item*.
 
@@ -826,6 +822,12 @@ class HomeMenu:
         """
         assert "id" in item
         assert "node" in item
+
+        # Defensive fallback: server may omit "style" or send null.
+        # In Lua, nil values are silently ignored; in Python, None
+        # propagates into Widget constructors and causes TypeError.
+        if not item.get("style"):
+            item["style"] = "item"
 
         # Context-menu callback (placeholder)
         item["cmCallback"] = lambda: int(EVENT_CONSUME)

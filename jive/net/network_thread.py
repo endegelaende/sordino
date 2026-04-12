@@ -162,9 +162,7 @@ class NetworkThread:
 
         # Subscriber notification system (weak references to subscribers)
         # Maps subscriber object → 1 (presence marker)
-        self._subscribers: weakref.WeakValueDictionary[int, Any] = (
-            weakref.WeakValueDictionary()
-        )
+        self._subscribers: weakref.WeakValueDictionary[int, Any] = weakref.WeakValueDictionary()
 
         # Network activity tracking
         self._network_active_count: Dict[Any, int] = {}
@@ -371,7 +369,14 @@ class NetworkThread:
 
             # Check if timeout has expired (timeout > 0 means enabled)
             if entry.timeout > 0 and (now - entry.last_seen) > entry.timeout:
-                log.warn("network thread timeout for %s", entry.task.name)
+                elapsed_s = (now - entry.last_seen) / 1000.0
+                timeout_s = entry.timeout / 1000.0
+                log.warn(
+                    "network thread timeout for %s (%.1fs inactive, timeout=%.1fs)",
+                    entry.task.name,
+                    elapsed_s,
+                    timeout_s,
+                )
                 entry.task.add_task("inactivity timeout")
 
     def _t_select(self, timeout_secs: float) -> None:
@@ -584,9 +589,7 @@ class NetworkThread:
                 except Exception as exc:
                     log.error("Error running %s: %s", method_name, exc)
                 else:
-                    applet_name = getattr(
-                        getattr(obj, "_entry", None), "appletName", None
-                    )
+                    applet_name = getattr(getattr(obj, "_entry", None), "appletName", None)
                     if applet_name:
                         log.debug("%s sent to %s", method_name, applet_name)
 
@@ -768,9 +771,7 @@ class NetworkThread:
             return
 
         # Build the ARP command
-        is_windows = platform.system() == "Windows" or "Windows" in os.environ.get(
-            "OS", ""
-        )
+        is_windows = platform.system() == "Windows" or "Windows" in os.environ.get("OS", "")
         if is_windows:
             cmd = f"arp -a {host}"
         else:
@@ -846,11 +847,7 @@ class NetworkThread:
     # ------------------------------------------------------------------
 
     def __repr__(self) -> str:
-        return (
-            f"NetworkThread("
-            f"read={len(self._t_read_socks)}, "
-            f"write={len(self._t_write_socks)})"
-        )
+        return f"NetworkThread(read={len(self._t_read_socks)}, write={len(self._t_write_socks)})"
 
     def __str__(self) -> str:
         return "NetworkThread"

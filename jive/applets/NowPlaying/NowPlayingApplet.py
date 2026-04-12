@@ -76,9 +76,7 @@ _SCROLL_TIMEOUT = 750
 # ---------------------------------------------------------------------------
 
 
-def _uses(
-    parent: Dict[str, Any], value: Optional[Dict[str, Any]] = None
-) -> Dict[str, Any]:
+def _uses(parent: Dict[str, Any], value: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     """Create a style dict that inherits from *parent*.
 
     Works like Lua ``_uses()`` — recursively inherits table keys.
@@ -240,9 +238,7 @@ def _Surface() -> Any:
 
 def _SnapshotWindow() -> Any:
     if "SnapshotWindow" not in _ui_cache:
-        _ui_cache["SnapshotWindow"] = _import_ui_class(
-            "snapshotwindow", "SnapshotWindow"
-        )
+        _ui_cache["SnapshotWindow"] = _import_ui_class("snapshotwindow", "SnapshotWindow")
     return _ui_cache["SnapshotWindow"]
 
 
@@ -483,9 +479,7 @@ class NowPlayingApplet(Applet):
 
         # Verify selected style is available
         if self.selectedStyle:
-            found = any(
-                s["enabled"] and s["style"] == self.selectedStyle for s in audited
-            )
+            found = any(s["enabled"] and s["style"] == self.selectedStyle for s in audited)
             if not found:
                 self.selectedStyle = False  # type: ignore[assignment]
 
@@ -706,9 +700,7 @@ class NowPlayingApplet(Applet):
             if self.titleGroup:
                 self.change_title_text(self._title_text(mode))
 
-    def notify_playerTrackChange(
-        self, player: Any, now_playing: Any, artwork: Any
-    ) -> None:
+    def notify_playerTrackChange(self, player: Any, now_playing: Any, artwork: Any) -> None:
         if player is not self.player:
             return
         log.debug("notify_playerTrackChange: %s", now_playing)
@@ -745,11 +737,7 @@ class NowPlayingApplet(Applet):
         if hasattr(self.window, "replace"):
             self.window.replace(self.snapshot, _now_playing_track_transition)
 
-        if (
-            player_status
-            and player_status.get("item_loop")
-            and self.nowPlaying != now_playing
-        ):
+        if player_status and player_status.get("item_loop") and self.nowPlaying != now_playing:
             self.nowPlaying = now_playing
 
         self.replace_np_window()
@@ -821,9 +809,7 @@ class NowPlayingApplet(Applet):
                 if self.get_selected_style_param("titleXofYonly"):
                     title = xofy
                 else:
-                    title = (
-                        str(self.string(_MODE_TOKENS.get(token, token))) + " • " + xofy
-                    )
+                    title = str(self.string(_MODE_TOKENS.get(token, token))) + " • " + xofy
             else:
                 title = str(self.string(_MODE_TOKENS.get(token, token)))
         else:
@@ -988,11 +974,7 @@ class NowPlayingApplet(Applet):
             if len(msgs) > 1:
                 if hasattr(self.artistalbumTitle, "setValue"):
                     self.artistalbumTitle.setValue(msgs[0], duration)
-                if (
-                    len(msgs[1]) > 0
-                    and self.trackTitle
-                    and hasattr(self.trackTitle, "setValue")
-                ):
+                if len(msgs[1]) > 0 and self.trackTitle and hasattr(self.trackTitle, "setValue"):
                     self.trackTitle.setValue(msgs[1], duration)
             else:
                 if self.trackTitle and hasattr(self.trackTitle, "setValue"):
@@ -1000,19 +982,13 @@ class NowPlayingApplet(Applet):
                 if hasattr(self.artistalbumTitle, "setValue") and hasattr(
                     self.artistalbumTitle, "getValue"
                 ):
-                    self.artistalbumTitle.setValue(
-                        self.artistalbumTitle.getValue(), duration
-                    )
+                    self.artistalbumTitle.setValue(self.artistalbumTitle.getValue(), duration)
         elif np_trackinfo_lines == 3 and self.titleGroup:
             if len(msgs) == 1:
                 if hasattr(self.titleGroup, "setWidgetValue"):
                     self.titleGroup.setWidgetValue("text", msgs[0], duration)
                 if self.trackTitle and hasattr(self.trackTitle, "setValue"):
-                    val = (
-                        self.trackTitle.getValue()
-                        if hasattr(self.trackTitle, "getValue")
-                        else ""
-                    )
+                    val = self.trackTitle.getValue() if hasattr(self.trackTitle, "getValue") else ""
                     self.trackTitle.setValue(val, duration)
                 if self.albumTitle and hasattr(self.albumTitle, "setValue"):
                     self.albumTitle.setValue("", duration)
@@ -1062,9 +1038,7 @@ class NowPlayingApplet(Applet):
                 # preload artwork for next track
                 if len(item_loop) > 1:
                     Icon = _Icon()
-                    self._get_icon(
-                        item_loop[1], Icon("artwork"), player_status.get("remote")
-                    )
+                    self._get_icon(item_loop[1], Icon("artwork"), player_status.get("remote"))
         else:
             if self.window:
                 self._get_icon(None, self.artwork, None)
@@ -1147,9 +1121,7 @@ class NowPlayingApplet(Applet):
                     self._remap_button("rew", "rewDisabled", lambda: EVENT_CONSUME)
 
                 self._remap_button("fwd", "fwdDisabled", lambda: EVENT_CONSUME)
-                self._remap_button(
-                    "shuffleMode", "shuffleDisabled", lambda: EVENT_CONSUME
-                )
+                self._remap_button("shuffleMode", "shuffleDisabled", lambda: EVENT_CONSUME)
                 if hasattr(self.controlsGroup, "setWidget") and self.repeatButton:
                     self.controlsGroup.setWidget("repeatMode", self.repeatButton)
             else:
@@ -1208,13 +1180,15 @@ class NowPlayingApplet(Applet):
         Icon = _Icon()
         Button = _Button()
         if new_callback is not None:
-            new_widget = Button(Icon(key), new_callback)
+            # Button installs mouse listeners on the widget but is not
+            # itself a Widget.  In Lua, Button:__init() returns the
+            # widget; in Python __init__ cannot return a different object.
+            new_widget = Icon(key)
+            Button(new_widget, new_callback)
             if hasattr(self.controlsGroup, "setWidget"):
                 self.controlsGroup.setWidget(key, new_widget)
         widget = (
-            self.controlsGroup.getWidget(key)
-            if hasattr(self.controlsGroup, "getWidget")
-            else None
+            self.controlsGroup.getWidget(key) if hasattr(self.controlsGroup, "getWidget") else None
         )
         if widget and new_style and hasattr(widget, "setStyle"):
             widget.setStyle(new_style)
@@ -1349,10 +1323,7 @@ class NowPlayingApplet(Applet):
             return
 
         # Don't update while waiting to play
-        if (
-            hasattr(self.player, "is_waiting_to_play")
-            and self.player.is_waiting_to_play()
-        ):
+        if hasattr(self.player, "is_waiting_to_play") and self.player.is_waiting_to_play():
             return
         if hasattr(self.player, "isWaitingToPlay") and self.player.isWaitingToPlay():
             return
@@ -1369,12 +1340,7 @@ class NowPlayingApplet(Applet):
             else:
                 str_elapsed = _seconds_to_string(e)
 
-        if (
-            elapsed is not None
-            and float(elapsed) >= 0
-            and duration
-            and float(duration) > 0
-        ):
+        if elapsed is not None and float(elapsed) >= 0 and duration and float(duration) > 0:
             d = float(duration)
             e = float(elapsed)
             if e > d:
@@ -1387,9 +1353,7 @@ class NowPlayingApplet(Applet):
             if elapsed_widget:
                 el_len = len(str_elapsed)
                 el_style = (
-                    elapsed_widget.getStyle()
-                    if hasattr(elapsed_widget, "getStyle")
-                    else "elapsed"
+                    elapsed_widget.getStyle() if hasattr(elapsed_widget, "getStyle") else "elapsed"
                 )
                 if el_len > 5 and el_style != "elapsedSmall":
                     if hasattr(elapsed_widget, "setStyle"):
@@ -1406,9 +1370,7 @@ class NowPlayingApplet(Applet):
                 if remain_widget:
                     r_len = len(str_remain)
                     r_style = (
-                        remain_widget.getStyle()
-                        if hasattr(remain_widget, "getStyle")
-                        else "remain"
+                        remain_widget.getStyle() if hasattr(remain_widget, "getStyle") else "remain"
                     )
                     if r_len > 5 and r_style != "remainSmall":
                         if hasattr(remain_widget, "setStyle"):
@@ -1654,10 +1616,7 @@ class NowPlayingApplet(Applet):
                     self.cumulativeScrollTicks = abs(scroll)
                     return EVENT_CONSUME
 
-                if (
-                    self.lastScrollTime is not None
-                    and self.lastScrollTime + _SCROLL_TIMEOUT < now
-                ):
+                if self.lastScrollTime is not None and self.lastScrollTime + _SCROLL_TIMEOUT < now:
                     self.cumulativeScrollTicks = 0
 
                 self.cumulativeScrollTicks += abs(scroll)
@@ -1778,9 +1737,7 @@ class NowPlayingApplet(Applet):
             return EVENT_CONSUME
 
         lbutton = (
-            window.createDefaultLeftButton()
-            if hasattr(window, "createDefaultLeftButton")
-            else None
+            window.createDefaultLeftButton() if hasattr(window, "createDefaultLeftButton") else None
         )
 
         title_group = Group(
@@ -1836,18 +1793,20 @@ class NowPlayingApplet(Applet):
                 Framework.pushAction("go_now_playing")
             return EVENT_CONSUME
 
-        self.trackTitleButton = Button(self.trackTitle, _launch_ctx)
-        self.albumTitleButton = Button(self.albumTitle, _launch_ctx)
-        self.artistTitleButton = Button(self.artistTitle, _launch_ctx)
+        # Button() installs mouse listeners on the widget — the widget
+        # (not the Button) goes into the Group.  In Lua, Button:__init()
+        # returns the wrapped widget; in Python __init__ cannot return a
+        # different object, so Button is a side-effect-only helper.
+        Button(self.trackTitle, _launch_ctx)
+        Button(self.albumTitle, _launch_ctx)
+        Button(self.artistTitle, _launch_ctx)
 
         self.nptrackGroup = Group(
             "nptitle",
-            {"nptrack": self.trackTitleButton, "xofy": self.XofY},
+            {"nptrack": self.trackTitle, "xofy": self.XofY},
         )
-        self.npartistGroup = Group(
-            "npartistgroup", {"npartist": self.artistTitleButton}
-        )
-        self.npalbumGroup = Group("npalbumgroup", {"npalbum": self.albumTitleButton})
+        self.npartistGroup = Group("npartistgroup", {"npartist": self.artistTitle})
+        self.npalbumGroup = Group("npalbumgroup", {"npalbum": self.albumTitle})
 
         # Scroll switch timer
         if self.scrollSwitchTimer is None and self.scrollText:
@@ -1862,9 +1821,7 @@ class NowPlayingApplet(Applet):
                     and hasattr(self.scrollSwitchTimer, "isRunning")
                     and not self.scrollSwitchTimer.isRunning()
                 ):
-                    if self.artistalbumTitle and hasattr(
-                        self.artistalbumTitle, "animate"
-                    ):
+                    if self.artistalbumTitle and hasattr(self.artistalbumTitle, "animate"):
                         self.artistalbumTitle.animate(True)
                     if self.artistTitle and hasattr(self.artistTitle, "animate"):
                         self.artistTitle.animate(True)
@@ -1876,9 +1833,7 @@ class NowPlayingApplet(Applet):
         jive_main = _get_jive_main()
         has_artist_album = False
         if jive_main and hasattr(jive_main, "get_skin_param"):
-            has_artist_album = (
-                jive_main.get_skin_param("NOWPLAYING_TRACKINFO_LINES") == 2
-            )
+            has_artist_album = jive_main.get_skin_param("NOWPLAYING_TRACKINFO_LINES") == 2
 
         if has_artist_album and self.artistalbumTitle:
 
@@ -1980,8 +1935,9 @@ class NowPlayingApplet(Applet):
 
         # Artwork
         self.artwork = Icon("artwork")
-        self.artworkGroup = Button(
-            Group("npartwork", {"artwork": self.artwork}),
+        self.artworkGroup = Group("npartwork", {"artwork": self.artwork})
+        Button(
+            self.artworkGroup,
             lambda: (
                 Framework.pushAction("go_now_playing")
                 if Framework and hasattr(Framework, "pushAction")
@@ -1999,8 +1955,9 @@ class NowPlayingApplet(Applet):
         ):
             # Create a placeholder group; a real skin will inject the
             # actual SpectrumMeter / VUMeter widget.
-            self.visuGroup = Button(
-                Group("npvisu", {"visu": Icon("visu_placeholder")}),
+            self.visuGroup = Group("npvisu", {"visu": Icon("visu_placeholder")})
+            Button(
+                self.visuGroup,
                 lambda: (
                     Framework.pushAction("go_now_playing")
                     if Framework and hasattr(Framework, "pushAction")
@@ -2010,8 +1967,12 @@ class NowPlayingApplet(Applet):
             )
 
         # Transport controls
-        play_icon = Button(
-            Icon("play"),
+        # Button() is a side-effect-only helper: it installs mouse
+        # listeners on the widget.  The widget (Icon) goes into the
+        # Group — not the Button (which is not a Widget subclass).
+        play_icon = Icon("play")
+        Button(
+            play_icon,
             lambda: (
                 Framework.pushAction("pause")
                 if Framework and hasattr(Framework, "pushAction")
@@ -2026,11 +1987,11 @@ class NowPlayingApplet(Applet):
             )[-1],
         )
         if player_status and player_status.get("mode") == "play":
-            if hasattr(play_icon, "setStyle"):
-                play_icon.setStyle("pause")
+            play_icon.setStyle("pause")
 
-        self.repeatButton = Button(
-            Icon("repeatMode"),
+        self.repeatButton = Icon("repeatMode")
+        Button(
+            self.repeatButton,
             lambda: (
                 Framework.pushAction("repeat_toggle")
                 if Framework and hasattr(Framework, "pushAction")
@@ -2038,8 +1999,9 @@ class NowPlayingApplet(Applet):
                 EVENT_CONSUME,
             )[-1],
         )
-        self.shuffleButton = Button(
-            Icon("shuffleMode"),
+        self.shuffleButton = Icon("shuffleMode")
+        Button(
+            self.shuffleButton,
             lambda: (
                 Framework.pushAction("shuffle_toggle")
                 if Framework and hasattr(Framework, "pushAction")
@@ -2122,16 +2084,13 @@ class NowPlayingApplet(Applet):
         if hasattr(self.volSlider, "addTimer"):
             self.volSlider.addTimer(
                 1000,
-                lambda: (
-                    self._update_volume()
-                    if not self.volumeSliderDragInProgress
-                    else None
-                ),
+                lambda: self._update_volume() if not self.volumeSliderDragInProgress else None,
             )
 
         # Rew / Fwd buttons
-        self.rewButton = Button(
-            Icon("rew"),
+        self.rewButton = Icon("rew")
+        Button(
+            self.rewButton,
             lambda: (
                 Framework.pushAction("jump_rew")
                 if Framework and hasattr(Framework, "pushAction")
@@ -2139,8 +2098,9 @@ class NowPlayingApplet(Applet):
                 EVENT_CONSUME,
             )[-1],
         )
-        self.fwdButton = Button(
-            Icon("fwd"),
+        self.fwdButton = Icon("fwd")
+        Button(
+            self.fwdButton,
             lambda: (
                 Framework.pushAction("jump_fwd")
                 if Framework and hasattr(Framework, "pushAction")
@@ -2154,11 +2114,7 @@ class NowPlayingApplet(Applet):
             try:
                 from jive.applet_manager import applet_manager as _mgr
 
-                if (
-                    _mgr is not None
-                    and hasattr(_mgr, "system")
-                    and _mgr.system is not None
-                ):
+                if _mgr is not None and hasattr(_mgr, "system") and _mgr.system is not None:
                     return _mgr.system
             except (ImportError, AttributeError):
                 pass
@@ -2199,6 +2155,11 @@ class NowPlayingApplet(Applet):
                 Framework.dispatchEvent(self.volSlider, Event(EVENT_SCROLL, rel=3))
             return EVENT_CONSUME
 
+        _voldown_icon = Icon("volDown")
+        Button(_voldown_icon, _vol_down_cb)
+        _volup_icon = Icon("volUp")
+        Button(_volup_icon, _vol_up_cb)
+
         self.controlsGroup = Group(
             "npcontrols",
             {
@@ -2214,8 +2175,8 @@ class NowPlayingApplet(Applet):
                 "fwd": self.fwdButton,
                 "repeatMode": self.repeatButton,
                 "shuffleMode": self.shuffleButton,
-                "volDown": Button(Icon("volDown"), _vol_down_cb),
-                "volUp": Button(Icon("volUp"), _vol_up_cb),
+                "volDown": _voldown_icon,
+                "volUp": _volup_icon,
                 "volSlider": self.volSlider,
             },
         )
@@ -2242,9 +2203,7 @@ class NowPlayingApplet(Applet):
             window.addWidget(self.controlsGroup)
             window.addWidget(self.progressGroup)
 
-        self.suppressTitlebar = (
-            self.get_selected_style_param("suppressTitlebar") or False
-        )
+        self.suppressTitlebar = self.get_selected_style_param("suppressTitlebar") or False
         if not self.suppressTitlebar and hasattr(window, "addWidget"):
             window.addWidget(self.titleGroup)
 
@@ -2270,9 +2229,7 @@ class NowPlayingApplet(Applet):
     # Service methods
     # ------------------------------------------------------------------
 
-    def goNowPlaying(
-        self, transition: Any = None, direct: bool = False
-    ) -> Optional[bool]:
+    def goNowPlaying(self, transition: Any = None, direct: bool = False) -> Optional[bool]:
         """Navigate to the NowPlaying screen.
 
         Registered as the ``goNowPlaying`` service.
@@ -2363,11 +2320,7 @@ class NowPlayingApplet(Applet):
         Framework = _get_framework()
         Window = _Window()
 
-        if (
-            np_window is not None
-            and Framework
-            and hasattr(Framework, "isWindowInStack")
-        ):
+        if np_window is not None and Framework and hasattr(Framework, "isWindowInStack"):
             if Framework.isWindowInStack(np_window):
                 log.debug("NP already on stack")
                 if hasattr(np_window, "moveToTop"):
@@ -2438,9 +2391,7 @@ class NowPlayingApplet(Applet):
         else:
             self._get_icon(None, self.artwork, None)
             self._update_track("\n\n\n")
-            self._update_mode(
-                player_status.get("mode", "stop") if player_status else "stop"
-            )
+            self._update_mode(player_status.get("mode", "stop") if player_status else "stop")
             self._update_playlist()
 
         self._update_volume()

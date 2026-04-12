@@ -361,9 +361,7 @@ class SocketHttp(SocketTcp):
 
         log.debug("%s IP=%s", self, ip)
         if ip is None:
-            err_msg = (
-                f"{self.host} {err}" if err else f"{self.host} DNS resolution failed"
-            )
+            err_msg = f"{self.host} {err}" if err else f"{self.host} DNS resolution failed"
             self.close(err_msg)
             return
 
@@ -457,8 +455,7 @@ class SocketHttp(SocketTcp):
 
         # Build the request data
         request_line = (
-            f"{self._http_send_request.t_get_request_string()} "
-            f"HTTP/{self._http_protocol}"
+            f"{self._http_send_request.t_get_request_string()} HTTP/{self._http_protocol}"
         )
 
         lines: List[str] = [request_line]
@@ -753,15 +750,9 @@ class SocketHttp(SocketTcp):
         if self._http_recv_request is None:
             return
 
-        transfer_encoding = self._http_recv_request.t_get_response_header(
-            "transfer-encoding"
-        )
-        content_length_str = self._http_recv_request.t_get_response_header(
-            "content-length"
-        )
-        connection_close = (
-            self._http_recv_request.t_get_response_header("connection") == "close"
-        )
+        transfer_encoding = self._http_recv_request.t_get_response_header("transfer-encoding")
+        content_length_str = self._http_recv_request.t_get_response_header("content-length")
+        connection_close = self._http_recv_request.t_get_response_header("connection") == "close"
 
         if transfer_encoding == "chunked":
             mode = "chunked"
@@ -783,9 +774,7 @@ class SocketHttp(SocketTcp):
             self._recv_chunked(sink_mode, connection_close, body_buffer)
         elif mode == "by-length":
             content_length = int(content_length_str)  # type: ignore[arg-type]
-            self._recv_by_length(
-                sink_mode, connection_close, content_length, body_buffer
-            )
+            self._recv_by_length(sink_mode, connection_close, content_length, body_buffer)
         else:
             self._recv_until_closed(sink_mode, connection_close, body_buffer)
 
@@ -1114,9 +1103,7 @@ class SocketHttp(SocketTcp):
                     return None
                 buf[0] += new_data
             except BlockingIOError as exc:
-                log.debug(
-                    "%s:_recv_chunked._body_pump: would block: %s", sock_self, exc
-                )
+                log.debug("%s:_recv_chunked._body_pump: would block: %s", sock_self, exc)
             except OSError as exc:
                 if "timeout" in str(exc).lower():
                     pass
@@ -1225,4 +1212,4 @@ class SocketHttp(SocketTcp):
         )
 
     def __str__(self) -> str:
-        return f"SocketHttp {{{self.js_name}}}"
+        return f"SocketHttp {{{self.js_name}}} ({self.host}:{self.port})"

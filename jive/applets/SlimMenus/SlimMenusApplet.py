@@ -493,9 +493,7 @@ class SlimMenusApplet(Applet):
                     self._update_my_music_title(self._server.name)
                 jm.open_node_by_id("_myMusic", True)
             except (AttributeError, TypeError) as exc:
-                log.warning(
-                    "otherLibrarySelector: failed to open _myMusic node: %s", exc
-                )
+                log.warning("otherLibrarySelector: failed to open _myMusic node: %s", exc)
 
     # snake_case alias
     other_library_selector = otherLibrarySelector
@@ -507,11 +505,7 @@ class SlimMenusApplet(Applet):
     def notify_networkOrServerNotOK(self, iface: Any = None) -> None:
         """Handle network or server failure notification."""
         log.warn("notify_networkOrServerNotOK")
-        if (
-            iface is not None
-            and hasattr(iface, "isNetworkError")
-            and iface.isNetworkError()
-        ):
+        if iface is not None and hasattr(iface, "isNetworkError") and iface.isNetworkError():
             self.network_error = iface
         else:
             self.network_error = False
@@ -699,10 +693,7 @@ class SlimMenusApplet(Applet):
         if self._player is player and not self.waiting_for_player_menu_status:
             if player is not None and player is not False:
                 player_server = self._get_player_server(player)
-                if (
-                    player_server is self._server
-                    and not self.player_or_server_change_in_progress
-                ):
+                if player_server is self._server and not self.player_or_server_change_in_progress:
                     log.debug(
                         "player and server didn't change, not changing menus: %s",
                         player,
@@ -770,9 +761,7 @@ class SlimMenusApplet(Applet):
                             )
 
                     try:
-                        for _id, server in (
-                            mgr.call_service("iterateSqueezeCenters") or ()
-                        ):
+                        for _id, server in mgr.call_service("iterateSqueezeCenters") or ():
                             is_compatible = self._server_is_compatible(server)
                             is_sn = self._server_is_squeeze_network(server)
                             if (
@@ -980,7 +969,7 @@ class SlimMenusApplet(Applet):
                     "node": v.get("node"),
                     "isApp": v.get("isApp"),
                     "iconStyle": v.get("iconStyle"),
-                    "style": v.get("style"),
+                    "style": v.get("style") or "item",
                     "text": v.get("text"),
                     "homeMenuText": v.get("homeMenuText"),
                     "weight": v.get("weight"),
@@ -1062,9 +1051,7 @@ class SlimMenusApplet(Applet):
                                 exc,
                             )
                             try:
-                                icon_server.setAppParameter(
-                                    app_type, "iconId", item_icon
-                                )
+                                icon_server.setAppParameter(app_type, "iconId", item_icon)
                             except (AttributeError, TypeError) as exc2:
                                 log.warning(
                                     "_menu_sink: failed to set app parameter iconId for %s: %s",
@@ -1086,14 +1073,10 @@ class SlimMenusApplet(Applet):
                         if isinstance(server_data, dict):
                             cmd_list = server_data.get("cmd", [])
                             server_data["id"] = " ".join(str(c) for c in cmd_list)
-                            server_data["playerId"] = applet._get_player_id(
-                                applet._player
-                            )
+                            server_data["playerId"] = applet._get_player_id(applet._player)
                             server_data["server"] = applet._server
                             server_data["appParameters"] = None
-                            app_type = _get_app_type(
-                                _safe_deref(v, "actions", "go", "cmd")
-                            )
+                            app_type = _get_app_type(_safe_deref(v, "actions", "go", "cmd"))
                             if app_type and applet._server:
                                 try:
                                     server_data["appParameters"] = (
@@ -1136,11 +1119,7 @@ class SlimMenusApplet(Applet):
                 system = _get_system()
                 if item_id == "playerpower" and system is not None:
                     try:
-                        machine = (
-                            system.get_machine()
-                            if hasattr(system, "get_machine")
-                            else None
-                        )
+                        machine = system.get_machine() if hasattr(system, "get_machine") else None
                         if system.has_soft_power() and machine != "squeezeplay":
                             continue
                     except (AttributeError, TypeError) as exc:
@@ -1181,9 +1160,7 @@ class SlimMenusApplet(Applet):
                         try:
                             jm.remove_item_by_id(item_id)
                         except (AttributeError, TypeError) as exc:
-                            log.warning(
-                                "_menu_sink: failed to remove item %s: %s", item_id, exc
-                            )
+                            log.warning("_menu_sink: failed to remove item %s: %s", item_id, exc)
 
                 elif is_current_server and _safe_deref(v, "actions", "do", "choices"):
                     # Choice item (e.g. repeat mode selection)
@@ -1234,9 +1211,7 @@ class SlimMenusApplet(Applet):
                                     # new window.
                                     def _loaded_cb(step: Any = None) -> None:
                                         jm2 = _get_jive_main()
-                                        if jm2 is not None and hasattr(
-                                            jm2, "unlock_item"
-                                        ):
+                                        if jm2 is not None and hasattr(jm2, "unlock_item"):
                                             jm2.unlock_item(_item)
 
                                     _mgr.call_service(
@@ -1377,9 +1352,7 @@ class SlimMenusApplet(Applet):
                 try:
                     jm.add_item(custom_home_item)
                 except (AttributeError, TypeError) as exc:
-                    log.warning(
-                        "_add_item: failed to add home copy hm_%s: %s", item_id, exc
-                    )
+                    log.warning("_add_item: failed to add home copy hm_%s: %s", item_id, exc)
         else:
             log.debug("item already present: %s", item_id)
 
@@ -1473,15 +1446,11 @@ class SlimMenusApplet(Applet):
         try:
             jm.remove_item_by_id("opmlmyapps")
         except (AttributeError, TypeError) as exc:
-            log.warning(
-                "_add_my_apps_node: failed to remove old opmlmyapps item: %s", exc
-            )
+            log.warning("_add_my_apps_node: failed to remove old opmlmyapps item: %s", exc)
 
         self.my_apps_node = True
 
-    def _add_server_home_menu_items(
-        self, server: Any, menu_items: List[Dict[str, Any]]
-    ) -> None:
+    def _add_server_home_menu_items(self, server: Any, menu_items: List[Dict[str, Any]]) -> None:
         """Cache server menu items for server-capability lookups."""
         if server not in self.server_home_menu_items:
             self.server_home_menu_items[server] = {}
@@ -1515,15 +1484,11 @@ class SlimMenusApplet(Applet):
                 my_music_node["originalNodeText"] = my_music_node.get("text", "")
 
             if not server_name or server_name == "mysqueezebox.com":
-                my_music_node["text"] = my_music_node.get(
-                    "originalNodeText", "My Music"
-                )
+                my_music_node["text"] = my_music_node.get("originalNodeText", "My Music")
             else:
                 my_music_node["text"] = server_name
         except (AttributeError, TypeError) as exc:
-            log.warning(
-                "_update_my_music_title: failed to update My Music title: %s", exc
-            )
+            log.warning("_update_my_music_title: failed to update My Music title: %s", exc)
 
     # ------------------------------------------------------------------
     # Server menu fetching
@@ -1772,18 +1737,14 @@ class SlimMenusApplet(Applet):
             try:
                 self._updating_player_popup.hide()
             except (AttributeError, TypeError) as exc:
-                log.warning(
-                    "_hide_player_updating: failed to hide player popup: %s", exc
-                )
+                log.warning("_hide_player_updating: failed to hide player popup: %s", exc)
             self._updating_player_popup = False
 
         if self._updating_prompt_popup and self._updating_prompt_popup is not False:
             try:
                 self._updating_prompt_popup.hide()
             except (AttributeError, TypeError) as exc:
-                log.warning(
-                    "_hide_player_updating: failed to hide prompt popup: %s", exc
-                )
+                log.warning("_hide_player_updating: failed to hide prompt popup: %s", exc)
             self._updating_prompt_popup = False
 
     # ------------------------------------------------------------------
@@ -1981,6 +1942,5 @@ class SlimMenusApplet(Applet):
         server_name = self._get_server_name(self._server) if self._server else None
         menu_count = len(self._player_menus)
         return (
-            f"SlimMenusApplet(player={player_name!r}, "
-            f"server={server_name!r}, menus={menu_count})"
+            f"SlimMenusApplet(player={player_name!r}, server={server_name!r}, menus={menu_count})"
         )
