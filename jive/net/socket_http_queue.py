@@ -179,4 +179,4 @@ class SocketHttpQueue(SocketHttp):
         )
 
     def __str__(self) -> str:
-        return f"SocketHttpQueue {{{self.js_name}}}"
+        return f"SocketHttpQueue {{{self.js_name}}} ({self.host}:{self.port})"

@@ -327,6 +327,17 @@ class Menu(Widget):
         bot_item = top_item + max(self.num_widgets, 1) - 1
         if not (max_val < top_item or min_val > bot_item):
             self.re_layout()
+        elif self.num_widgets == 0 and self.list_size > 0:
+            # Bounds not yet set by parent layout — force re_layout so
+            # _skin() recalculates num_widgets once bounds are available.
+            # Without this, data that arrives before the first layout pass
+            # (common on RPi5) would never trigger a render.
+            log.debug(
+                "Menu.set_items: forcing re_layout — num_widgets=0, list_size=%d, style=%s",
+                self.list_size,
+                self.style,
+            )
+            self.re_layout()
 
     setItems = set_items
 
@@ -740,6 +751,29 @@ class Menu(Widget):
         if self.item_renderer is None:
             return
 
+        bx, by, bw, bh = self.get_bounds()
+
+        # If bounds haven't been set yet, recalculate num_widgets from
+        # current bounds — _layout() may not have run yet but bounds
+        # may have been set by the parent since _skin() last ran.
+        if self.num_widgets == 0 and bh > 0 and self.item_height > 0:
+            self.num_widgets = (bh // self.item_height) * self.items_per_line
+
+        if self.num_widgets == 0 and self.list_size > 0:
+            log.warning(
+                "Menu._update_widgets: skipping render — num_widgets=0 "
+                "but list_size=%d bounds_h=%d item_height=%d style=%s — "
+                "will re-trigger on next layout",
+                self.list_size,
+                bh,
+                self.item_height,
+                self.style,
+            )
+            # Mark dirty so the next check_layout() re-runs _layout()
+            # which will call _update_widgets() again with valid bounds.
+            self._needs_layout = True
+            return
+
         ipl = self.items_per_line or 1
         index_size = self.num_widgets + ipl  # one extra for smooth scrolling
         min_idx = self.top_item
@@ -974,8 +1008,9 @@ class Menu(Widget):
                         except TypeError:
                             try:
                                 self._lock_cancel(self)
-                            except Exception:
-                                pass
+                            except Exception as e:
+                                log.warning("_lock_cancel failed: %s", e)
+                                self._locked = False
                     self.unlock()
                     return int(EVENT_CONSUME)
                 # All other actions consumed while locked
@@ -1121,8 +1156,9 @@ class Menu(Widget):
                             except TypeError:
                                 try:
                                     self._lock_cancel(self)
-                                except Exception:
-                                    pass
+                                except Exception as e:
+                                    log.warning("_lock_cancel failed: %s", e)
+                                    self._locked = False
                         self.unlock()
                         return int(EVENT_CONSUME)
                 except (ImportError, AttributeError):
@@ -1230,6 +1266,20 @@ class Menu(Widget):
             self.num_widgets = (bh // self.item_height) * self.items_per_line
         else:
             self.num_widgets = 0
+
+        # Sanity check: if bounds have a valid height but num_widgets is
+        # still 0 while we have data, something is wrong (itemHeight
+        # larger than bounds, or unexpected layout state).
+        if self.num_widgets == 0 and self.list_size > 0 and bh > 0:
+            log.warning(
+                "Menu._skin: num_widgets=0 despite bh=%d "
+                "(itemHeight=%d, list_size=%d, style=%s) "
+                "— menu items will not be visible",
+                bh,
+                self.item_height,
+                self.list_size,
+                self.style,
+            )
 
     # ------------------------------------------------------------------
     # Layout (jiveL_menu_layout)

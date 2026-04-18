@@ -306,12 +306,8 @@ class Comet:
         self.uri = f"http://{ip}:{port}{path}"
 
         # Create two HTTP sockets: one for chunked and one for requests
-        self.chttp = SocketHttp(
-            jnt=self.jnt, host=ip, port=port, name=f"{self.name}_Chunked"
-        )
-        self.rhttp = SocketHttp(
-            jnt=self.jnt, host=ip, port=port, name=f"{self.name}_Request"
-        )
+        self.chttp = SocketHttp(jnt=self.jnt, host=ip, port=port, name=f"{self.name}_Chunked")
+        self.rhttp = SocketHttp(jnt=self.jnt, host=ip, port=port, name=f"{self.name}_Request")
 
         self.chttp.set_priority(PRIORITY_HIGH)
         self.rhttp.set_priority(PRIORITY_HIGH)
@@ -499,9 +495,7 @@ class Comet:
         self.subs = [s for s in self.subs if s.subscription != subscription]
 
         # Add to pending unsubs
-        self.pending_unsubs.append(
-            _PendingUnsub(reqid=req_id, subscription=subscription)
-        )
+        self.pending_unsubs.append(_PendingUnsub(reqid=req_id, subscription=subscription))
 
         self.reqid = req_id + 1
 
@@ -869,9 +863,7 @@ class Comet:
             elif isinstance(chunk, dict):
                 data = chunk
             else:
-                log.warn(
-                    "%s: unexpected handshake response: %s", comet_self, type(chunk)
-                )
+                log.warn("%s: unexpected handshake response: %s", comet_self, type(chunk))
                 return
 
             # Update advice if any
@@ -964,8 +956,7 @@ class Comet:
 
         if not self.client_id:
             log.debug(
-                "%s: _reconnect error: cannot reconnect without clientId, "
-                "handshaking instead",
+                "%s: _reconnect error: cannot reconnect without clientId, handshaking instead",
                 self,
             )
             self._handshake()
@@ -1020,6 +1011,18 @@ class Comet:
 
         # We no longer care about sent request replies
         self.sent_reqs = []
+
+        # Clean up orphaned one-shot request callbacks — invoke with error
+        # so UI components (e.g. SlimBrowser) can unlock their menus.
+        orphaned_keys = [k for k in self.notify_callbacks if k.startswith("/slim/request|")]
+
+        for key in orphaned_keys:
+            callbacks = self.notify_callbacks.pop(key, {})
+            for _, cb in callbacks.items():
+                try:
+                    cb(None, "disconnected")
+                except Exception as exc:
+                    log.warning("Error invoking orphaned callback %s: %s", key, exc)
 
         data = [
             {
@@ -1253,9 +1256,7 @@ class Comet:
             if event_id is not None:
                 try:
                     event_id_int = int(event_id)
-                    self.sent_reqs = [
-                        r for r in self.sent_reqs if r.get("id") != event_id_int
-                    ]
+                    self.sent_reqs = [r for r in self.sent_reqs if r.get("id") != event_id_int]
                 except (ValueError, TypeError) as exc:
                     log.debug("_response: event_id int conversion failed: %s", exc)
 
@@ -1312,6 +1313,7 @@ class Comet:
                     onetime_request = True
 
                 callbacks = self.notify_callbacks.get(subscription)
+
                 if callbacks:
                     log.debug(
                         "%s: _response, notifying callbacks for %s",
@@ -1334,8 +1336,7 @@ class Comet:
                         self.notify_callbacks.pop(subscription, None)
                 else:
                     log.debug(
-                        "%s: _response, got data for unsubscribed event, "
-                        "ignoring -> %s",
+                        "%s: _response, got data for unsubscribed event, ignoring -> %s",
                         self,
                         subscription,
                     )

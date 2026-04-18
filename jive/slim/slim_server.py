@@ -1287,6 +1287,8 @@ class SlimServer:
                         url,
                     )
                     self.artwork_fetch_count -= 1
+                    # Clear the "loading" sentinel so retries are possible
+                    self.artwork_cache.set(cache_key, None)
 
                 self.artwork_fetch_count += 1
 
@@ -1309,7 +1311,11 @@ class SlimServer:
                         )
 
             if err:
-                logcache.debug("_get_artwork_thumb_sink(%s) error: %s", url, err)
+                logcache.warning("_get_artwork_thumb_sink(%s) error: %s", url, err)
+                # Clear the "loading" sentinel so the artwork can be retried
+                # on the next request.  Without this, a transient network
+                # failure permanently prevents the artwork from loading.
+                self.artwork_cache.set(cache_key, None)
                 return
 
             if chunk:

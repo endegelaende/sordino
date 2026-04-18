@@ -1166,10 +1166,12 @@ class JiveMain:
             return self.home_menu.get_node_table()  # type: ignore[no-any-return]
         return {}
 
-    def close_to_home(self, transition: bool = True) -> None:
+    def close_to_home(
+        self, hide_always_on_top: bool = True, transition: Optional[Any] = None
+    ) -> None:
         """Close all windows back to the home screen."""
         if self.home_menu is not None:
-            self.home_menu.close_to_home(transition)
+            self.home_menu.close_to_home(hide_always_on_top, transition)
 
     def set_title(self, title: Optional[str]) -> None:
         """Set the home-screen title (e.g. the current player name)."""
@@ -1446,7 +1448,9 @@ class _HomeMenuStub:
     def get_node_table(self) -> Dict[str, Any]:
         return dict(self._nodes)
 
-    def close_to_home(self, transition: bool = True) -> None:
+    def close_to_home(
+        self, hide_always_on_top: bool = True, transition: Optional[Any] = None
+    ) -> None:
         pass
 
     # Lua-compatible camelCase aliases

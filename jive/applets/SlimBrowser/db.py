@@ -165,8 +165,7 @@ class DB:
             raw_count = chunk.get("playlist_tracks")
         if raw_count is None:
             log.warning(
-                "update_status: chunk has neither 'count' nor 'playlist_tracks' — "
-                "keys present: %s",
+                "update_status: chunk has neither 'count' nor 'playlist_tracks' — keys present: %s",
                 list(chunk.keys())[:20],
             )
             return False
@@ -244,8 +243,15 @@ class DB:
         c_to = 0
         if self.count > 0:
             item_loop = chunk.get("item_loop")
-            assert item_loop is not None, "chunk must have item_loop if count > 0"
-            assert "offset" in chunk, "chunk must have offset field if count > 0"
+            # Lua _assert was a no-op — don't hard-crash here.
+            if item_loop is None or "offset" not in chunk:
+                log.warning(
+                    "menu_items: count=%d but chunk missing %s — skipping storage (keys: %s)",
+                    self.count,
+                    "item_loop" if item_loop is None else "offset",
+                    list(chunk.keys())[:20],
+                )
+                return (self.count, 0, 0)
 
             c_from = int(chunk["offset"]) + 1
             c_to = c_from + len(item_loop) - 1

@@ -235,10 +235,20 @@ class Icon(Widget):
         self._widget_pack()
 
         # Default image from style
-        if self.img_style_name:
-            img = style_image(self, self.img_style_name, None)
-        else:
-            img = style_image(self, "img", None)
+        img_key = self.img_style_name or "img"
+        img = style_image(self, img_key, None)
+
+        # Title-bar button icons (and similar) are stored as Tiles in the
+        # skin, not as Surfaces.  When style_image() finds nothing, fall
+        # back to style_tile() and extract the underlying pygame.Surface.
+        if img is None:
+            tile = style_tile(self, img_key, None)
+            if tile is not None:
+                pg_surf = tile.get_image_surface()
+                if pg_surf is not None:
+                    from jive.ui.surface import Surface as SurfaceClass
+
+                    img = SurfaceClass(pg_surf)
 
         if self._default_img is not img:
             self._default_img = img

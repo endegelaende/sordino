@@ -108,7 +108,7 @@ __all__ = ["Window"]
 log = logger("jivelite.ui")
 
 # Duration (ms) for horizontal push transitions
-_HORIZONTAL_PUSH_DURATION: int = 500
+_HORIZONTAL_PUSH_DURATION: int = 100
 
 
 # ---------------------------------------------------------------------------
@@ -284,6 +284,17 @@ class Window(Widget):
         else:
             # First call — create the title Group with a Label
             self.set_icon_widget("text", Label("text", title))
+
+            # Install default title-bar buttons (back + NowPlaying),
+            # matching Lua Window:setTitle() which includes default
+            # button widgets.  Callers like HomeMenu override lbutton
+            # via set_button_action() afterwards.
+            lbutton = self.create_default_left_button()
+            if lbutton is not None:
+                self.set_icon_widget("lbutton", lbutton)
+            rbutton = self.create_default_right_button()
+            if rbutton is not None:
+                self.set_icon_widget("rbutton", rbutton)
 
         # If a title icon style was provided, set the icon widget
         if title_style is not None:
@@ -1004,22 +1015,34 @@ class Window(Widget):
         """
         Check and perform layout if needed, including lower windows
         for transparent window chains.
+
+        Includes a convergence loop matching the C original
+        ``jiveL_window_check_layout``: if layout triggers further
+        layout needs (e.g. a child's ``_layout()`` calls
+        ``re_layout()`` back up to this window), run again — up to
+        5 iterations to prevent infinite loops.
         """
         if self.transparent:
             lower = self.get_lower_window()
             if lower is not None and hasattr(lower, "check_layout"):
                 lower.check_layout()
 
-        super().check_layout()
+        # Convergence loop (matches C: while child_origin != jive_origin && --safety > 0)
+        for _ in range(5):
+            super().check_layout()
 
-        # Also check global widgets
-        try:
-            from jive.ui.framework import framework as fw
+            # Also check global widgets
+            try:
+                from jive.ui.framework import framework as fw
 
-            for gw in fw.get_widgets():
-                gw.check_layout()
-        except (ImportError, AttributeError) as exc:
-            log.debug("import fallback: %s", exc)
+                for gw in fw.get_widgets():
+                    gw.check_layout()
+            except (ImportError, AttributeError) as exc:
+                log.debug("import fallback: %s", exc)
+
+            # Converged when neither skin nor layout is still dirty
+            if not self._needs_skin and not self._needs_layout:
+                break
 
     # ==================================================================
     # Per-window skin
@@ -2236,6 +2259,8 @@ Window.removeWidget = Window.remove_widget  # type: ignore[attr-defined]
 Window.focusWidget = Window.focus_widget  # type: ignore[attr-defined]
 Window.setTitle = Window.set_title  # type: ignore[attr-defined]
 Window.getTitle = Window.get_title  # type: ignore[attr-defined]
+Window.setTitleWidget = Window.set_title_widget  # type: ignore[attr-defined]
+Window.getTitleWidget = Window.get_title_widget  # type: ignore[attr-defined]
 Window.getLowerWindow = Window.get_lower_window  # type: ignore[attr-defined]
 Window.getWindow = Window.get_window  # type: ignore[assignment]
 Window.checkLayout = Window.check_layout  # type: ignore[assignment]

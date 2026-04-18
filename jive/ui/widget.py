@@ -194,9 +194,7 @@ class Widget:
     # Child iteration  (overridden by containers like Group, Window, Menu)
     # ------------------------------------------------------------------
 
-    def iterate(
-        self, closure: Callable[["Widget"], None], include_hidden: bool = False
-    ) -> None:
+    def iterate(self, closure: Callable[["Widget"], None], include_hidden: bool = False) -> None:
         """
         Call *closure(child)* for every child widget.
 
@@ -274,9 +272,7 @@ class Widget:
         p = self.padding
         return p[0], p[1], p[2], p[3]
 
-    def set_padding(
-        self, left: int = 0, top: int = 0, right: int = 0, bottom: int = 0
-    ) -> None:
+    def set_padding(self, left: int = 0, top: int = 0, right: int = 0, bottom: int = 0) -> None:
         self.padding[:] = [left, top, right, bottom]
 
     def get_border(self) -> Tuple[int, int, int, int]:
@@ -284,9 +280,7 @@ class Widget:
         b = self.border
         return b[0], b[1], b[2], b[3]
 
-    def set_border(
-        self, left: int = 0, top: int = 0, right: int = 0, bottom: int = 0
-    ) -> None:
+    def set_border(self, left: int = 0, top: int = 0, right: int = 0, bottom: int = 0) -> None:
         self.border[:] = [left, top, right, bottom]
 
     # ------------------------------------------------------------------
@@ -405,10 +399,11 @@ class Widget:
         mirrors the C original where bumping ``jive_origin`` causes
         every widget to run its full ``_skin()`` pass from scratch on
         the next ``checkSkin()``.
+
+        Tail-calls ``re_layout()`` to walk the parent chain, matching
+        the C original ``jiveL_widget_reskin`` → ``jiveL_widget_relayout``.
         """
         self._needs_skin = True
-        self._needs_layout = True
-        self._needs_draw = True
 
         # Reset style-derived geometry to defaults — these will be
         # repopulated by _widget_pack() / _skin() during the next
@@ -423,16 +418,35 @@ class Widget:
         # Invalidate cached style path so style_path() recomputes it
         # with the current style_modifier.
         self._style_path = None
-        _mark_screen_dirty()
+
+        # Walk parent chain (matching C: reSkin tail-calls reLayout)
+        self.re_layout()
 
     def re_layout(self) -> None:
         """
         Mark the widget as needing a layout pass.
 
+        Walks UP the parent chain, marking each ancestor as needing
+        child-iteration and layout until a layout root (Window) is
+        reached.  This matches the C original ``jiveL_widget_relayout``
+        which ensures that parent containers rebuild their z_widgets
+        list and re-visit children during ``checkLayout()``.
+
         Also implies re-draw.
         """
-        self._needs_layout = True
-        self._needs_draw = True
+        dirty = True
+        widget: Optional["Widget"] = self
+        while widget is not None:
+            if dirty:
+                widget._needs_layout = True
+            widget._needs_draw = True
+            # Once we hit a layout root (e.g. Window), stop dirtying
+            # _needs_layout on ancestors but keep walking to mark
+            # _needs_draw.  Matches C: layoutRoot stops layout_origin
+            # dirtying but child_origin is still dirtied.
+            if dirty and getattr(widget, "layout_root", False):
+                dirty = False
+            widget = getattr(widget, "parent", None)
         _mark_screen_dirty()
 
     def re_draw(self) -> None:
@@ -959,9 +973,7 @@ class Widget:
         Return a human-readable tree dump of this widget and its children.
         """
         pad = "  " * level
-        parts: list[str] = [
-            f"{pad}{self} [{self.peer_to_string()} visible={self.visible}]"
-        ]
+        parts: list[str] = [f"{pad}{self} [{self.peer_to_string()} visible={self.visible}]"]
         self.iterate(lambda child: parts.append(child.dump(level + 1)))
         return "\n".join(parts)
 

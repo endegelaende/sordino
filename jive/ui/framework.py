@@ -530,7 +530,15 @@ class Framework:
     def pop_window(self, window: Optional[Widget] = None) -> Optional[Widget]:
         """
         Pop *window* from the stack (or the top window if *window* is
-        ``None``).  The new top window receives ``EVENT_WINDOW_ACTIVE``.
+        ``None``).
+
+        Event order is aligned with ``Window.hide()`` and the original
+        JiveLite lifecycle:
+
+        1. Remove the window from the stack
+        2. Reactivate/re-show the newly exposed top window
+        3. Hide/inactivate the popped window
+        4. Dispatch ``EVENT_WINDOW_POP`` on the popped window
 
         Returns the popped window.
         """
@@ -546,13 +554,16 @@ class Framework:
         was_top = self.window_stack[0] is window
         self.window_stack.remove(window)
 
-        window._event(Event(int(EVENT_HIDE), ticks=_get_ticks()))
-        window._event(Event(int(EVENT_WINDOW_POP), ticks=_get_ticks()))
-
         if was_top and self.window_stack:
             new_top = self.window_stack[0]
-            new_top._event(Event(int(EVENT_SHOW), ticks=_get_ticks()))
             new_top._event(Event(int(EVENT_WINDOW_ACTIVE), ticks=_get_ticks()))
+            new_top._event(Event(int(EVENT_SHOW), ticks=_get_ticks()))
+
+        if getattr(window, "visible", False):
+            window._event(Event(int(EVENT_HIDE), ticks=_get_ticks()))
+            window._event(Event(int(EVENT_WINDOW_INACTIVE), ticks=_get_ticks()))
+
+        window._event(Event(int(EVENT_WINDOW_POP), ticks=_get_ticks()))
 
         self.re_draw(None)
         return window
@@ -736,19 +747,6 @@ class Framework:
 
         Returns ``True`` to keep running, ``False`` on quit.
         """
-        # Ensure the top window has valid layout before dispatching
-        # events.  Without this, z_widgets may be empty and mouse
-        # events silently miss all child widgets.  Matches the Lua
-        # original where updateScreen (which runs check_layout) is
-        # called before event processing.
-        if self.window_stack:
-            top = self.window_stack[0]
-            if top._needs_skin or top._needs_layout:
-                try:
-                    top.check_layout()
-                except Exception as exc:
-                    log.warning("check_layout failed: %s", exc)
-
         while self._event_queue:
             event = self._event_queue.popleft()
 
@@ -812,13 +810,16 @@ class Framework:
 
     def update_screen(self) -> None:
         """
-        Perform one frame of rendering:
+        Perform one frame of rendering.
 
-        1. Draw background
-        2. If a transition is active, run the transition step
-        3. Otherwise: check skin/layout on the top window, draw it
-        4. Draw global widgets
-        5. Flip the display
+        Follows the C original ``_draw_screen`` structure:
+
+        1. Layout on top window (always, with convergence loop)
+        2. Tick animations
+        3. Draw (conditional on dirty region / transition)
+
+        This matches the C code where layout and animations ALWAYS run
+        (unconditionally), but pixel drawing is gated on dirty state.
         """
         if self._screen_surface is None or not self._initialised:
             return
@@ -826,25 +827,49 @@ class Framework:
         if not self._update_screen_enabled:
             return
 
-        # Skip rendering when nothing has changed (dirty-flag optimisation).
-        # Transitions and animations always force a redraw.
-        if not self._screen_dirty and self._transition is None and not self._animation_widgets:
+        screen = self._screen_surface
+        top: Optional[Widget] = None
+
+        # --- Phase 1: Layout (ALWAYS runs) ---
+        # The C original runs checkLayout unconditionally before
+        # checking transitions or dirty regions.  A convergence loop
+        # handles the case where layout triggers a re-skin:
+        #   do { jive_origin = next_jive_origin;
+        #        checkLayout(top);
+        #   } while (jive_origin != next_jive_origin);
+        if self.window_stack:
+            top = self.window_stack[0]
+            for _ in range(5):
+                top.check_layout()
+                if not getattr(top, "_needs_skin", False) and not getattr(
+                    top, "_needs_layout", False
+                ):
+                    break
+
+        # --- Phase 2: Animations ---
+        # In the C original, animation ticks happen inside
+        # _draw_screen, between layout and the transition/draw phase.
+        self._tick_animations()
+
+        # --- Phase 3: Drawing (conditional) ---
+        # Only the pixel-drawing portion is gated.  This matches the C
+        # original where _draw_screen always runs layout and animations,
+        # but only blits pixels when the dirty region is non-empty or a
+        # transition is active.
+        if not self._screen_dirty and self._transition is None:
             return
 
         self._screen_dirty = False
 
-        screen = self._screen_surface
-
         # Reset offset and clip to full screen before each frame.
-        # Matches C ``_draw_screen`` which calls
-        # ``jive_surface_set_clip(srf, NULL)`` and always starts with
-        # offset (0, 0).
+        # Matches C _draw_screen which calls
+        # jive_surface_set_clip(srf, NULL).
         screen.set_offset(0, 0)
         sw, sh = screen.get_size()
         screen.pg.set_clip(None)
 
         # Background — fill the entire screen.
-        # Matches C: jive_tile_blit(jive_background, srf, 0, 0, screen_w, screen_h)
+        # Matches C: jive_tile_blit(jive_background, srf, 0, 0, ...)
         if self._background is not None:
             try:
                 self._background.blit(screen, 0, 0, sw, sh)
@@ -855,17 +880,14 @@ class Framework:
 
         # Transition takes over rendering while active
         if self._transition is not None:
-            top = self.window_stack[0] if self.window_stack else None
             try:
                 self._transition(top, screen)
             except Exception as exc:
                 log.warn("transition error: %s", exc)
                 self._transition = None
         else:
-            # Top window
-            if self.window_stack:
-                top = self.window_stack[0]
-                top.check_layout()
+            # Top window — layout already ran in Phase 1
+            if top is not None:
                 top.draw(screen)
 
         # Global widgets
@@ -891,8 +913,14 @@ class Framework:
         self._transition = step_fn
 
     def _kill_transition(self) -> None:
-        """End the current transition (if any)."""
+        """End the current transition (if any).
+
+        Sets ``_screen_dirty`` to ensure the top window gets a proper
+        layout + draw cycle on the next frame, rather than remaining
+        frozen on the stale transition snapshot.
+        """
         self._transition = None
+        self._screen_dirty = True
 
     # ==================================================================
     # Action registry
@@ -1421,21 +1449,14 @@ class Framework:
         Main event loop.
 
         Runs until a ``QUIT`` event is received or ``quit()`` is called.
-        Each iteration:
+        Each iteration follows the original JiveLite ordering:
 
         1. Translate pygame events → Jive events
         2. Run optional *task* callback (e.g. NetworkThread pump)
-        3. Process timer queue
-        4. Tick animations
-        5. Process event queue
-        6. Update / draw the screen
-        7. Throttle to target frame rate
-
-        Parameters
-        ----------
-        task:
-            Optional callable invoked once per frame (e.g. the
-            NetworkThread task that pumps network I/O).
+        3. Update screen (layout + animations + draw, matching C _draw_screen)
+        4. Process timer queue
+        5. Process queued events
+        6. Throttle to target frame rate
         """
         if not self._initialised:
             raise RuntimeError("Framework.init() must be called before event_loop()")
@@ -1472,31 +1493,25 @@ class Framework:
                 except Exception as exc:
                     log.warn("event_loop task error: %s", exc)
 
-            # 3. Timers
+            # 3. Draw / layout first, matching JiveLite's
+            #    updateScreen() before timer/event processing.
+            self.update_screen()
+
+            # 4. Timers
             Timer.run_timers(now)
 
-            # 4. Animations
-            self._tick_animations()
-
-            # 5. Process queued events BEFORE drawing so that the
-            #    current frame reflects the user's input immediately
-            #    (eliminates 1-frame / ~33ms input lag).
-            #    Layout is forced for the top window before dispatch
-            #    so that z_widgets exist for mouse hit-testing — see
-            #    _process_event_queue().
+            # 5. Process queued events after drawing. This matches the
+            #    original JiveLite frame loop where updateScreen() runs
+            #    before processEvents().
             if not self._process_event_queue():
                 self._running = False
                 break
 
-            # 6. Draw / layout — now renders the result of events
-            #    processed above, so the user sees immediate feedback.
-            self.update_screen()
-
-            # 7. Guard: quit() may have been called from a timer/listener
+            # 6. Guard: quit() may have been called from a timer/listener
             if not self._running:
                 break
 
-            # 8. Throttle
+            # 7. Throttle
             if self._clock is not None:
                 self._clock.tick(self._frame_rate)
 
@@ -1528,7 +1543,6 @@ class Framework:
         # Draw / layout FIRST so z_widgets is populated before events
         self.update_screen()
         Timer.run_timers(now)
-        self._tick_animations()
         running = self._process_event_queue()
         return running
 

@@ -1740,17 +1740,21 @@ class NowPlayingApplet(Applet):
             window.createDefaultLeftButton() if hasattr(window, "createDefaultLeftButton") else None
         )
 
+        # Create widgets first, then Button() for side-effect only
+        # (mouse listener install).  Button is not a Widget subclass —
+        # placing it in the Group dict would produce invisible slots.
+        title_label = Label("text", self.mainTitle)
+        Button(title_label, _title_tap)
+
+        rbutton_group = Group(button_style, {"icon": Icon("icon")})
+        Button(rbutton_group, _rbutton_tap, _rbutton_hold, _rbutton_long)
+
         title_group = Group(
             "title",
             {
                 "lbutton": lbutton,
-                "text": Button(Label("text", self.mainTitle), _title_tap),
-                "rbutton": Button(
-                    Group(button_style, {"icon": Icon("icon")}),
-                    _rbutton_tap,
-                    _rbutton_hold,
-                    _rbutton_long,
-                ),
+                "text": title_label,
+                "rbutton": rbutton_group,
             },
         )
         return title_group

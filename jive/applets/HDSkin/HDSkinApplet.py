@@ -2221,13 +2221,90 @@ class HDSkinApplet(Applet):
             {"img": _load_image("IconsResized/icon_region_other" + skinSuffix)},
         )
 
-        # button_none — invisible button (Lua L2138-2145)
-        s["button_none"] = {
-            "bgImg": False,
-            "w": TITLE_BUTTON_WIDTH - 12,
+        # ---------------------------------------------------------------
+        # Title-bar buttons (Lua L2073-2161)
+        # ---------------------------------------------------------------
+        _button: Style = {
+            "bgImg": titlebarButtonBox,
+            "w": TITLE_BUTTON_WIDTH,
+            "h": WH_FILL,
             "border": [8, 0, 8, 0],
-            "padding": 0,
+            "icon": {
+                "w": WH_FILL,
+                "h": WH_FILL,
+                "hidden": 1,
+                "align": "center",
+                "img": False,
+            },
+            "text": {
+                "w": WH_FILL,
+                "h": WH_FILL,
+                "hidden": 1,
+                "border": 0,
+                "padding": 0,
+                "align": "center",
+                "font": _font(16),
+                "fg": [0xDC, 0xDC, 0xDC],
+            },
         }
+        _pressed_button = _uses(_button, {"bgImg": pressedTitlebarButtonBox})
+
+        # Icon button factory
+        def _title_button_icon(name: str, icon: Any) -> None:
+            s[name] = _uses(_button)
+            s[name]["layer"] = LAYER_TITLE
+            s["pressed"][name] = _uses(_pressed_button)
+
+            attr = {
+                "hidden": 0,
+                "img": icon,
+                "layer": LAYER_TITLE,
+            }
+            s[name]["icon"] = _uses(_button["icon"], attr)
+            s[name]["w"] = 65
+            s["pressed"][name]["icon"] = _uses(_pressed_button["icon"], attr)
+            s["pressed"][name]["w"] = 65
+
+        # Text button factory
+        def _title_button_text(name: str, text_str: Any) -> None:
+            s[name] = _uses(_button)
+            s["pressed"][name] = _uses(_pressed_button)
+
+            attr = {
+                "hidden": 0,
+                "text": text_str,
+            }
+            s[name]["text"] = _uses(_button["text"], attr)
+            s[name]["w"] = 65
+            s["pressed"][name]["text"] = _uses(_pressed_button["text"], attr)
+            s["pressed"][name]["w"] = 65
+
+        # Invisible button (Lua L2138-2145)
+        s["button_none"] = _uses(
+            _button,
+            {
+                "bgImg": False,
+                "w": TITLE_BUTTON_WIDTH - 12,
+            },
+        )
+
+        _title_button_icon("button_back", backButton)
+        _title_button_icon("button_cancel", cancelButton)
+        _title_button_icon("button_go_home", homeButton)
+        _title_button_icon("button_playlist", playlistButton)
+        _title_button_icon("button_more", moreButton)
+        _title_button_icon("button_go_playlist", playlistButton)
+        _title_button_icon("button_go_now_playing", nowPlayingButton)
+        _title_button_icon("button_power", powerButton)
+        _title_button_icon("button_nothing", None)
+        _title_button_icon("button_help", helpButton)
+        more_help_text: Any = self.string("MORE_HELP")
+        enter_text: Any = self.string("ENTER")
+        _title_button_text("button_more_help", more_help_text)
+        _title_button_text("button_finish_operation", enter_text)
+
+        s["button_back"]["padding"] = [2, 0, 0, 2]
+        s["button_playlist"]["padding"] = [2, 0, 0, 2]
 
         # Volume min/max buttons (Lua L2159-2169)
         s["button_volume_min"] = {
