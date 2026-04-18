@@ -239,6 +239,31 @@ class Window(Widget):
         if title is not None:
             self.set_title(title, title_style)
 
+            # "Kind of a hack" — always reset the default title-bar
+            # buttons when the window becomes active, so that
+            # ShortcutApplet's overrides (action_action_mappings
+            # changes) are picked up in every window.
+            # Matches Lua Window.lua L176-188.
+            # The home window (windowStack[1] in Lua = windowStack[0]
+            # in Python) is excluded because it has its own power-button
+            # handling via HomeMenu.__init__.
+            win_self = self
+
+            def _on_window_active_reset_buttons(event: Event) -> int:
+                from jive.ui.framework import framework as fw
+
+                is_home = fw is not None and fw.window_stack and fw.window_stack[-1] is win_self
+                if not is_home:
+                    left = win_self.get_icon_widget("lbutton")
+                    if left is not None and getattr(left, "is_default_button_group", False):
+                        win_self.set_default_left_button_action()
+                    right = win_self.get_icon_widget("rbutton")
+                    if right is not None and getattr(right, "is_default_button_group", False):
+                        win_self.set_default_right_button_action()
+                return int(EVENT_UNUSED)
+
+            self.add_listener(int(EVENT_WINDOW_ACTIVE), _on_window_active_reset_buttons)
+
         # ---- Default back action ----
         handle = self.add_action_listener("back", self, Window._up_action)
         self._default_action_handles.append(handle)
@@ -1547,10 +1572,20 @@ class Window(Widget):
         action_style: str = "none"
         if press_action and fw is not None:
             translated = fw.get_action_to_action_translation(press_action)
+            log.info(
+                "createButtonActionButton: press_action=%r → translated=%r",
+                press_action,
+                translated,
+            )
             if translated and translated != "disabled":
                 action_style = translated
             elif translated is None or translated == "disabled":
                 action_style = "none"
+        elif press_action and fw is None:
+            log.warn(
+                "createButtonActionButton: framework is None, cannot translate %r", press_action
+            )
+        log.info("createButtonActionButton: style='button_%s'", action_style)
 
         # Build callbacks that push the action into the framework
         press_func: Optional[Callable[[], int]] = None
@@ -1632,6 +1667,32 @@ class Window(Widget):
         )
 
     createDefaultRightButton = create_default_right_button
+
+    def set_default_left_button_action(self) -> None:
+        """
+        Re-create and install the default left title-bar button.
+
+        Mirrors Lua ``Window:setDefaultLeftButtonAction()``
+        (Window.lua L864-868).
+        """
+        btn = self.create_default_left_button()
+        if btn is not None:
+            self.set_icon_widget("lbutton", btn)
+
+    setDefaultLeftButtonAction = set_default_left_button_action
+
+    def set_default_right_button_action(self) -> None:
+        """
+        Re-create and install the default right title-bar button.
+
+        Mirrors Lua ``Window:setDefaultRightButtonAction()``
+        (Window.lua L869-873).
+        """
+        btn = self.create_default_right_button()
+        if btn is not None:
+            self.set_icon_widget("rbutton", btn)
+
+    setDefaultRightButtonAction = set_default_right_button_action
 
     # ==================================================================
     # Mouse focus

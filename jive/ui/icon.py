@@ -241,6 +241,7 @@ class Icon(Widget):
         # Title-bar button icons (and similar) are stored as Tiles in the
         # skin, not as Surfaces.  When style_image() finds nothing, fall
         # back to style_tile() and extract the underlying pygame.Surface.
+        tile = None
         if img is None:
             tile = style_tile(self, img_key, None)
             if tile is not None:
@@ -249,6 +250,30 @@ class Icon(Widget):
                     from jive.ui.surface import Surface as SurfaceClass
 
                     img = SurfaceClass(pg_surf)
+
+        # Diagnostic: log title-bar button icon resolution
+        parent = self.parent
+        parent_style = getattr(parent, "style", "") if parent else ""
+        if parent_style.startswith("button_") and parent_style != "button_none":
+            from jive.ui.style import style_path as _style_path
+
+            path = _style_path(self)
+            if img is not None:
+                log.info(
+                    "Icon._skin: button icon OK — path=%r hidden=%s img=%r",
+                    path,
+                    self._hidden,
+                    type(img).__name__,
+                )
+            else:
+                log.warn(
+                    "Icon._skin: button icon MISSING — path=%r hidden=%s "
+                    "style_image=None tile=%r parent_style=%r",
+                    path,
+                    self._hidden,
+                    tile,
+                    parent_style,
+                )
 
         if self._default_img is not img:
             self._default_img = img
@@ -309,9 +334,7 @@ class Icon(Widget):
                 self._image_width = self._frame_width
 
                 # Register animation
-                self._animation_handle = self.add_animation(
-                    self._do_animate, self._frame_rate
-                )
+                self._animation_handle = self.add_animation(self._do_animate, self._frame_rate)
             else:
                 self._anim_total = 1
         else:
@@ -340,12 +363,10 @@ class Icon(Widget):
             inner_h = bh - pt - pb
 
             self._offset_x = (
-                Widget.halign(self._icon_align, inner_x, inner_w, self._image_width)
-                - bx
+                Widget.halign(self._icon_align, inner_x, inner_w, self._image_width) - bx
             )
             self._offset_y = (
-                Widget.valign(self._icon_align, inner_y, inner_h, self._image_height)
-                - by
+                Widget.valign(self._icon_align, inner_y, inner_h, self._image_height) - by
             )
 
     # ------------------------------------------------------------------
