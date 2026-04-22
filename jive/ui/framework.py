@@ -955,11 +955,29 @@ class Framework:
         return self._actions_by_index.get(index)
 
     def push_action(self, name: str) -> None:
-        """Create an ACTION event for *name* and push it onto the queue."""
-        log.info(f"push_action({name!r})")
-        idx = self._actions_by_name.get(name)
+        """Create an ACTION event for *name* and push it onto the queue.
+
+        Mirrors Lua ``Framework:newActionEvent()`` / ``pushAction()``
+        (Framework.lua L697-722): any action_action_mappings translation
+        is applied *before* the event is created, so that pushing
+        ``"title_right_press"`` actually dispatches the mapped
+        ``"go_now_playing"`` action rather than an unlistened-for raw
+        name.
+
+        Without this translation, title-bar button presses that rely
+        on the action-to-action map (e.g. the NowPlaying rbutton)
+        silently do nothing on any window that has not explicitly
+        installed a ``title_right_press`` listener.
+        """
+        translated = self.get_action_to_action_translation(name)
+        effective = translated if translated else name
+        if effective != name:
+            log.debug(f"push_action({name!r}) -> translated to {effective!r}")
+        else:
+            log.info(f"push_action({effective!r})")
+        idx = self._actions_by_name.get(effective)
         if idx is None:
-            idx = self.register_action(name)
+            idx = self.register_action(effective)
         self.push_event(Event(int(ACTION), index=idx))
 
     def dump_actions(self) -> str:

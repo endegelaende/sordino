@@ -485,18 +485,78 @@ class SlimMenusApplet(Applet):
     my_music_selector = myMusicSelector
 
     def otherLibrarySelector(self, *args: Any) -> None:
-        """Handle the "Switch Library" menu item selection."""
-        jm = _get_jive_main()
-        if jm is not None:
-            try:
-                if self._server and hasattr(self._server, "name"):
-                    self._update_my_music_title(self._server.name)
-                jm.open_node_by_id("_myMusic", True)
-            except (AttributeError, TypeError) as exc:
-                log.warning("otherLibrarySelector: failed to open _myMusic node: %s", exc)
+        """Handle the "Switch Library" / "Other Library" menu item.
+
+        Mirrors Lua ``SlimMenusApplet:otherLibrarySelector()``
+        (SlimMenusApplet.lua L1098-1103), which delegates to
+        ``_selectMusicSource(callback)`` — i.e. it presents the
+        ChooseMusicSource server-picker, and on success runs the
+        callback that navigates Home → ``_myMusic``.
+
+        The previous implementation opened ``_myMusic`` directly
+        without ever offering the server picker, so the user just
+        bounced back into the same library instead of switching.
+        """
+        self._select_music_source_with_callback(self._other_library_done)
 
     # snake_case alias
     other_library_selector = otherLibrarySelector
+
+    def _other_library_done(self) -> None:
+        """Success callback for ``otherLibrarySelector``.
+
+        Mirrors the Lua inline callback:
+
+        .. code-block:: lua
+
+            jiveMain:goHome()
+            self:_updateMyMusicTitle(_server and _server.name or nil)
+            jiveMain:openNodeById('_myMusic', true)
+        """
+        jm = _get_jive_main()
+        try:
+            if jm is not None and hasattr(jm, "go_home"):
+                jm.go_home()
+            if self._server and hasattr(self._server, "name"):
+                self._update_my_music_title(self._server.name)
+            if jm is not None:
+                jm.open_node_by_id("_myMusic", True)
+        except (AttributeError, TypeError) as exc:
+            log.warning("_other_library_done: navigation failed: %s", exc)
+
+    def _select_music_source_with_callback(
+        self,
+        callback: Callable[[], None],
+        specific_server: Any = None,
+        server_for_retry: Any = None,
+        confirm_on_change: bool = False,
+    ) -> None:
+        """Port of Lua ``SlimMenusApplet:_selectMusicSource()``.
+
+        Wraps the ``selectMusicSource`` service call so that callers
+        (``myMusicSelector``, ``otherLibrarySelector``, etc.) don't
+        need to know the full service signature.  The Lua original
+        additionally gates the call behind ``warnOnAnyNetworkFailure``
+        — we call the service directly and let it handle network
+        failures internally.
+        """
+        mgr = _get_applet_manager()
+        if mgr is None:
+            log.warning("_select_music_source_with_callback: no applet manager")
+            return
+        try:
+            mgr.call_service(
+                "selectMusicSource",
+                callback,
+                None,
+                None,
+                specific_server,
+                server_for_retry,
+                getattr(self, "waitingForPlayerMenuStatus", False),
+                confirm_on_change,
+            )
+        except Exception as exc:
+            log.error("selectMusicSource service call failed: %s", exc, exc_info=True)
 
     # ------------------------------------------------------------------
     # Notification handlers
