@@ -259,14 +259,14 @@ class Icon(Widget):
 
             path = _style_path(self)
             if img is not None:
-                log.info(
+                log.debug(
                     "Icon._skin: button icon OK — path=%r hidden=%s img=%r",
                     path,
                     self._hidden,
                     type(img).__name__,
                 )
             else:
-                log.warn(
+                log.warning(
                     "Icon._skin: button icon MISSING — path=%r hidden=%s "
                     "style_image=None tile=%r parent_style=%r",
                     path,

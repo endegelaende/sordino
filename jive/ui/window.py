@@ -239,6 +239,14 @@ class Window(Widget):
         if title is not None:
             self.set_title(title, title_style)
 
+            # Note: the default lbutton/rbutton widgets are installed
+            # inside ``set_title()`` on the first call (matches Lua
+            # Window.lua L170-171, where setDefaultLeftButtonAction /
+            # setDefaultRightButtonAction are called unconditionally
+            # in the constructor).  The listener below only re-installs
+            # them on EVENT_WINDOW_ACTIVE if they are still the default
+            # group (ShortcutApplet override hook).
+
             # "Kind of a hack" — always reset the default title-bar
             # buttons when the window becomes active, so that
             # ShortcutApplet's overrides (action_action_mappings
@@ -252,7 +260,10 @@ class Window(Widget):
             def _on_window_active_reset_buttons(event: Event) -> int:
                 from jive.ui.framework import framework as fw
 
-                is_home = fw is not None and fw.window_stack and fw.window_stack[-1] is win_self
+                # Lua: obj ~= Framework.windowStack[1]
+                # windowStack[1] in Lua == window_stack[0] in Python
+                # (new windows are inserted at index 0).
+                is_home = fw is not None and fw.window_stack and fw.window_stack[0] is win_self
                 if not is_home:
                     left = win_self.get_icon_widget("lbutton")
                     if left is not None and getattr(left, "is_default_button_group", False):
@@ -320,6 +331,11 @@ class Window(Widget):
             rbutton = self.create_default_right_button()
             if rbutton is not None:
                 self.set_icon_widget("rbutton", rbutton)
+            log.debug(
+                "set_title: created default buttons — lbutton=%s rbutton=%s",
+                type(lbutton).__name__ if lbutton is not None else "None",
+                type(rbutton).__name__ if rbutton is not None else "None",
+            )
 
         # If a title icon style was provided, set the icon widget
         if title_style is not None:
@@ -1572,7 +1588,7 @@ class Window(Widget):
         action_style: str = "none"
         if press_action and fw is not None:
             translated = fw.get_action_to_action_translation(press_action)
-            log.info(
+            log.debug(
                 "createButtonActionButton: press_action=%r → translated=%r",
                 press_action,
                 translated,
@@ -1582,10 +1598,10 @@ class Window(Widget):
             elif translated is None or translated == "disabled":
                 action_style = "none"
         elif press_action and fw is None:
-            log.warn(
+            log.warning(
                 "createButtonActionButton: framework is None, cannot translate %r", press_action
             )
-        log.info("createButtonActionButton: style='button_%s'", action_style)
+        log.debug("createButtonActionButton: style='button_%s'", action_style)
 
         # Build callbacks that push the action into the framework
         press_func: Optional[Callable[[], int]] = None
